@@ -1,6 +1,6 @@
 import { Tool } from "@mistralai/mistralai/models/components";
-import { Isolate, IsolateOptions } from "isolated-vm";
-import { Result } from "./utils";
+import { Isolate } from "isolated-vm";
+import { Result } from "../utils";
 import { isMatching, match, P } from "ts-pattern";
 
 const NewToolCall = {

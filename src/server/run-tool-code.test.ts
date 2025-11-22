@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PartialEvaluation, runToolCode } from "./run-tool-code";
 import { Tool } from "@mistralai/mistralai/models/components";
-import { Result } from "./utils";
+import { Result } from "../utils";
 
 const firstID = crypto.randomUUID();
 
