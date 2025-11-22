@@ -1,0 +1,26 @@
+{
+  "name": "ts-isolated-vm",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@mistralai/mistralai": "^1.10.0",
+    "isolated-vm": "^6.0.2",
+    "remeda": "^2.32.0",
+    "ts-pattern": "^5.9.0",
+    "zod": "^4.1.12"
+  }
+}
