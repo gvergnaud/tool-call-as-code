@@ -10,8 +10,10 @@ The server runs the code but forwards each tool call to the remote client, so cl
 
 ## Why this exists
 
-- **Code mode recap.** Cloudflare’s code mode wraps MCP tools in a TypeScript API. The model writes code once, and the runtime executes it, dramatically improving multi-tool workflows compared with classical tool-calling [^1].
-- **The gap.** In typical code mode deployments, whoever executes the generated code must also calls third party MCPs. If the LLM API runs the code, then it most own connected MCP servers, and store authentication credentials on behalf of the API user. If the client runs the code, then it needs a solution for running TypeScript safely, which isn't always easy depending on their stack.
+- **Code mode recap.** Cloudflare’s code mode wraps MCP tools in a TypeScript API. The model writes code once, and the runtime executes it, improving the performance of multi-tool workflows compared with classical tool-calling [^1].
+- **The gap.** In typical code mode as described by the article, whoever executes the generated code must also calls third party MCPs:
+  - If the model API runs the code, then it must own connected MCP servers, and store authentication credentials on behalf of the API user, etc.
+  - If the client runs the code, then it needs a solution for running TypeScript safely, which isn't always easy depending on their stack.
 - **Experiment goal.** Keep code invokation entirely server-side, keep the client-server API stateless, yet forward each tool invocation to the client. The server owns the orchestration, the client owns the execution.
 
 ## High-level design
