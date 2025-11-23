@@ -251,7 +251,7 @@ main().then(
     );
 
     if (!errors.length) {
-      return Result.success(success[0]?.value) ?? null;
+      return Result.success(success[0]?.value ?? null);
     }
 
     const newToolCalls = errors.map((x) => x.error).filter(isNewToolCall);
