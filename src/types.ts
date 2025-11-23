@@ -8,6 +8,10 @@ import type {
 } from "@mistralai/mistralai/models/components";
 import { P } from "ts-pattern";
 
+/**
+ * Standard messages, compliant to the tool calling protocol.
+ */
+
 export type StandardMessage =
   | AssistantMessage
   | SystemMessage
@@ -21,6 +25,11 @@ export type SystemMessage = SystemMessage_ & { role: "system" };
 export type ToolMessage = ToolMessage_ & { role: "tool"; toolCallId: string };
 
 export type UserMessage = UserMessage_ & { role: "user" };
+
+/**
+ * Server messages are regular messages, but the only allowed
+ * tool call is `run_typescript`.
+ */
 
 export const RunTypeScriptToolCall = {
   id: P.string,
@@ -38,9 +47,14 @@ export type ServerAssistantMessage = AssistantMessage & {
 };
 export type ServerMessage =
   | ServerAssistantMessage
-  | (UserMessage & { role: "user" })
-  | (SystemMessage & { role: "system" })
-  | (ToolMessage & { role: "tool" });
+  | UserMessage
+  | SystemMessage
+  | ToolMessage;
+
+/**
+ * Client messages have CodeMessage and CodeResultMessage
+ * in addition to standard messages.
+ */
 
 export type CodeMessage = {
   role: "code";
@@ -58,6 +72,10 @@ export type CodeResultMessage = {
 
 export type ClientMessage = StandardMessage | CodeMessage | CodeResultMessage;
 
+/**
+ * ToolWithOutput is a tool definition with a returned schema,
+ * used to generate the TypeScript type declarations for the system message.
+ */
 export type ToolWithOutput = Tool & {
   function: {
     returnSchema?: Record<string, any>;
