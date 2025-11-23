@@ -137,62 +137,169 @@ npm test
 
 This POC shows that code-mode style tool orchestration can keep the server stateless and still delegate execution to client-owned implementations, preserving the benefits of Cloudflare’s approach while loosening its deployment constraints.
 
-## Example client conversation
+## Example conversations
 
-```json
-[
-  {
-    "role": "user",
-    "content": "Look for sport news and international affaires news in parallel and give me all results."
-  },
-  {
-    "role": "code",
-    "code": "async function main() {\n    const [sportNews, internationalAffairesNews] = await Promise.all([\n        webSearch({ query: \"sport news\" }),\n        webSearch({ query: \"international affaires news\" }),\n    ]);\n\n    return {\n        sportNews,\n        internationalAffairesNews,\n    };\n}",
-    "id": "JZsSpZjh0"
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "toolCalls": [
-      {
-        "type": "function",
-        "function": {
-          "name": "web_search",
-          "arguments": "{\"query\":\"sport news\"}"
+<details>
+  <summary>Parallel tool call example</summary>
+  
+  ```json
+  [
+    {
+      "role": "user",
+      "content": "Look for sport news and international affaires news in parallel and give me all results."
+    },
+    {
+      "role": "code",
+      "code": "async function main() {\n    const [sportNews, internationalAffairesNews] = await Promise.all([\n        webSearch({ query: \"sport news\" }),\n        webSearch({ query: \"international affaires news\" }),\n    ]);\n\n    return {\n        sportNews,\n        internationalAffairesNews,\n    };\n}",
+      "id": "JZsSpZjh0"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\":\"sport news\"}"
+          },
+          "id": "cff9ca16-a01c-47f5-9970-1a367476ed23"
         },
-        "id": "cff9ca16-a01c-47f5-9970-1a367476ed23"
-      },
-      {
-        "type": "function",
-        "function": {
-          "name": "web_search",
-          "arguments": "{\"query\":\"international affaires news\"}"
-        },
-        "id": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
+        {
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\":\"international affaires news\"}"
+          },
+          "id": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "[{\"title\":\"UEFA Champions League: Real Madrid advances to semifinals\",\"url\":\"https://www.example.com/sport/real-madrid-semifinals\"},{\"title\":\"NBA: Lakers secure playoff spot with win over Warriors\",\"url\":\"https://www.example.com/sport/lakers-playoffs\"},{\"title\":\"Tennis: French Open set to begin next week\",\"url\":\"https://www.example.com/sport/french-open-preview\"}]",
+      "toolCallId": "cff9ca16-a01c-47f5-9970-1a367476ed23"
+    },
+    {
+      "role": "tool",
+      "content": "[{\"title\":\"UN calls for ceasefire in Middle East amid escalating tensions\",\"url\":\"https://www.example.com/world/un-ceasefire-middle-east\"},{\"title\":\"EU leaders meet to discuss climate policy reforms\",\"url\":\"https://www.example.com/world/eu-climate-policy\"},{\"title\":\"US-China trade talks resume in Geneva\",\"url\":\"https://www.example.com/world/us-china-trade-talks\"}]",
+      "toolCallId": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
+    },
+    {
+      "role": "code_result",
+      "id": "JZsSpZjh0",
+      "result": {
+        "status": "success",
+        "data": {}
       }
-    ]
-  },
-  {
-    "role": "tool",
-    "content": "[{\"title\":\"UEFA Champions League: Real Madrid advances to semifinals\",\"url\":\"https://www.example.com/sport/real-madrid-semifinals\"},{\"title\":\"NBA: Lakers secure playoff spot with win over Warriors\",\"url\":\"https://www.example.com/sport/lakers-playoffs\"},{\"title\":\"Tennis: French Open set to begin next week\",\"url\":\"https://www.example.com/sport/french-open-preview\"}]",
-    "toolCallId": "cff9ca16-a01c-47f5-9970-1a367476ed23"
-  },
-  {
-    "role": "tool",
-    "content": "[{\"title\":\"UN calls for ceasefire in Middle East amid escalating tensions\",\"url\":\"https://www.example.com/world/un-ceasefire-middle-east\"},{\"title\":\"EU leaders meet to discuss climate policy reforms\",\"url\":\"https://www.example.com/world/eu-climate-policy\"},{\"title\":\"US-China trade talks resume in Geneva\",\"url\":\"https://www.example.com/world/us-china-trade-talks\"}]",
-    "toolCallId": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
-  },
-  {
-    "role": "code_result",
-    "id": "JZsSpZjh0",
-    "result": {
-      "status": "success",
-      "data": {}
+    },
+    {
+      "role": "assistant",
+      "content": "Here are the latest **sport news** and **international affairs news**:\n\n### Sport News\n\n- [UEFA Champions League: Real Madrid advances to semifinals](https://www.example.com/sport/real-madrid-semifinals)\n- [NBA: Lakers secure playoff spot with win over Warriors](https://www.example.com/sport/lakers-playoffs)\n- [Tennis: French Open set to begin next week](https://www.example.com/sport/french-open-preview)\n\n### International Affairs News\n\n- [UN calls for ceasefire in Middle East amid escalating tensions](https://www.example.com/world/un-ceasefire-middle-east)\n- [EU leaders meet to discuss climate policy reforms](https://www.example.com/world/eu-climate-policy)\n- [US-China trade talks resume in Geneva](https://www.example.com/world/us-china-trade-talks)"
     }
-  },
-  {
-    "role": "assistant",
-    "content": "Here are the latest **sport news** and **international affairs news**:\n\n### Sport News\n\n- [UEFA Champions League: Real Madrid advances to semifinals](https://www.example.com/sport/real-madrid-semifinals)\n- [NBA: Lakers secure playoff spot with win over Warriors](https://www.example.com/sport/lakers-playoffs)\n- [Tennis: French Open set to begin next week](https://www.example.com/sport/french-open-preview)\n\n### International Affairs News\n\n- [UN calls for ceasefire in Middle East amid escalating tensions](https://www.example.com/world/un-ceasefire-middle-east)\n- [EU leaders meet to discuss climate policy reforms](https://www.example.com/world/eu-climate-policy)\n- [US-China trade talks resume in Geneva](https://www.example.com/world/us-china-trade-talks)"
-  }
-]
-```
+  ]
+  ```
+</details>
+
+<details>
+  <summary>Sequential tool call example</summary>
+  
+  ```json
+  [
+    {
+      "role": "user",
+      "content": "Compare news in france and in the us today"
+    },
+    {
+      "role": "code",
+      "code": "async function main() {\n  const resultsFrance = await webSearch({ query: \"news in France today\" });\n  const resultsUs = await webSearch({ query: \"news in US today\" });\n\n  return {\n    france: resultsFrance,\n    us: resultsUs\n  };\n}",
+      "id": "UB4cbzkvQ"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "type": "function",
+          "id": "3b3ca3ca-9d4a-43a1-8e63-e0785e421125",
+          "index": 0,
+          "function": {
+            "name": "webSearch",
+            "arguments": {
+              "query": "news in France today"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "[{\"title\":\"Gouvernement annonce un plan de relance pour les énergies renouvelables\",\"description\":\"Le Premier ministre a dévoilé ce matin un plan de 10 milliards d'euros pour accélérer la transition énergétique, avec un focus sur l'éolien et le solaire. Les objectifs visent une réduction de 50 % des émissions de CO₂ d'ici 2030.\"},{\"title\":\"Ligue 1 : le PSG domine l'OM dans un Classique tendu\",\"description\":\"Le Paris Saint-Germain s'impose 3-2 face à l'Olympique de Marseille lors d'un match riche en rebondissements. Mbappé marque un doublé et confirme sa forme éclatante à quelques semaines de la Coupe du Monde des Clubs.\"},{\"title\":\"Grèves dans les transports : la SNCF et la RATP appellent au dialogue\",\"description\":\"Une nouvelle journée de grève perturbe les transports en Île-de-France ce lundi. Les syndicats réclament des hausses de salaire et de meilleures conditions de travail, tandis que le gouvernement propose une médiation.\"}]",
+      "toolCallId": "3b3ca3ca-9d4a-43a1-8e63-e0785e421125"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "type": "function",
+          "id": "0634fade-b8ce-4740-8aad-a624d5b7634a",
+          "index": 1,
+          "function": {
+            "name": "webSearch",
+            "arguments": {
+              "query": "news in US today"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "[{\"title\":\"Federal Reserve hints at interest rate cut amid economic slowdown\",\"description\":\"The Fed signaled a potential rate cut in December as inflation cools and unemployment rises. Analysts warn of a possible recession if consumer spending continues to decline.\"},{\"title\":\"NFL: Chiefs secure playoff spot with thrilling overtime win\",\"description\":\"Patrick Mahomes leads the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce.\"},{\"title\":\"California wildfires force thousands to evacuate\",\"description\":\"Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters battle extreme winds and dry conditions, with containment efforts expected to take weeks.\"}]",
+      "toolCallId": "83258ebb-f59b-4f90-a419-6c101f95ced8"
+    },
+    {
+      "role": "code_result",
+      "id": "I43ZeAkkl",
+      "result": {
+        "status": "success",
+        "data": {
+          "frenchNews": [
+            {
+              "title": "Gouvernement annonce un plan de relance pour les énergies renouvelables",
+              "description": "Le Premier ministre a dévoilé ce matin un plan de 10 milliards d'euros pour accélérer la transition énergétique, avec un focus sur l'éolien et le solaire. Les objectifs visent une réduction de 50 % des émissions de CO₂ d'ici 2030."
+            },
+            {
+              "title": "Ligue 1 : le PSG domine l'OM dans un Classique tendu",
+              "description": "Le Paris Saint-Germain s'impose 3-2 face à l'Olympique de Marseille lors d'un match riche en rebondissements. Mbappé marque un doublé et confirme sa forme éclatante à quelques semaines de la Coupe du Monde des Clubs."
+            },
+            {
+              "title": "Grèves dans les transports : la SNCF et la RATP appellent au dialogue",
+              "description": "Une nouvelle journée de grève perturbe les transports en Île-de-France ce lundi. Les syndicats réclament des hausses de salaire et de meilleures conditions de travail, tandis que le gouvernement propose une médiation."
+            }
+          ],
+          "usNews": [
+            {
+              "title": "Federal Reserve hints at interest rate cut amid economic slowdown",
+              "description": "The Fed signaled a potential rate cut in December as inflation cools and unemployment rises. Analysts warn of a possible recession if consumer spending continues to decline."
+            },
+            {
+              "title": "NFL: Chiefs secure playoff spot with thrilling overtime win",
+              "description": "Patrick Mahomes leads the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce."
+            },
+            {
+              "title": "California wildfires force thousands to evacuate",
+              "description": "Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters battle extreme winds and dry conditions, with containment efforts expected to take weeks."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Here is a comparison of the news in France and the US today:\n\n### France\n\n1. **Gouvernement annonce un plan de relance pour les énergies renouvelables**\n   - The French Prime Minister unveiled a 10 billion euro plan to accelerate the energy transition, focusing on wind and solar power. The goal is to reduce CO₂ emissions by 50% by 2030.\n\n2. **Ligue 1 : le PSG domine l'OM dans un Classique tendu**\n   - Paris Saint-Germain defeated Olympique de Marseille 3-2 in an intense match. Kylian Mbappé scored twice and is in excellent form ahead of the Club World Cup.\n\n3. **Grèves dans les transports : la SNCF et la RATP appellent au dialogue**\n   - A new strike day is disrupting transport in the Île-de-France region. Unions are demanding salary increases and better working conditions, while the government proposes mediation.\n\n### US\n\n1. **Federal Reserve hints at interest rate cut amid economic slowdown**\n   - The Federal Reserve signaled a potential interest rate cut in December due to cooling inflation and rising unemployment. Analysts warn of a possible recession if consumer spending continues to decline.\n\n2. **NFL: Chiefs secure playoff spot with thrilling overtime win**\n   - Patrick Mahomes led the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce.\n\n3. **California wildfires force thousands to evacuate**\n   - Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters are battling extreme winds and dry conditions, with containment efforts expected to take weeks."
+    }
+  ]
+  ```
+</details>
