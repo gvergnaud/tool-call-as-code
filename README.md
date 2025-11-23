@@ -77,5 +77,59 @@ This POC shows that code-mode style tool orchestration can keep the server state
 ## Example client conversation
 
 ```json
-
+[
+  {
+    "role": "user",
+    "content": "Look for sport news and international affaires news in parallel and give me all results."
+  },
+  {
+    "role": "code",
+    "code": "async function main() {\n    const [sportNews, internationalAffairesNews] = await Promise.all([\n        webSearch({ query: \"sport news\" }),\n        webSearch({ query: \"international affaires news\" }),\n    ]);\n\n    return {\n        sportNews,\n        internationalAffairesNews,\n    };\n}",
+    "id": "JZsSpZjh0"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "toolCalls": [
+      {
+        "type": "function",
+        "function": {
+          "name": "web_search",
+          "arguments": "{\"query\":\"sport news\"}"
+        },
+        "id": "cff9ca16-a01c-47f5-9970-1a367476ed23"
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "web_search",
+          "arguments": "{\"query\":\"international affaires news\"}"
+        },
+        "id": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "[{\"title\":\"UEFA Champions League: Real Madrid advances to semifinals\",\"url\":\"https://www.example.com/sport/real-madrid-semifinals\"},{\"title\":\"NBA: Lakers secure playoff spot with win over Warriors\",\"url\":\"https://www.example.com/sport/lakers-playoffs\"},{\"title\":\"Tennis: French Open set to begin next week\",\"url\":\"https://www.example.com/sport/french-open-preview\"}]",
+    "toolCallId": "cff9ca16-a01c-47f5-9970-1a367476ed23"
+  },
+  {
+    "role": "tool",
+    "content": "[{\"title\":\"UN calls for ceasefire in Middle East amid escalating tensions\",\"url\":\"https://www.example.com/world/un-ceasefire-middle-east\"},{\"title\":\"EU leaders meet to discuss climate policy reforms\",\"url\":\"https://www.example.com/world/eu-climate-policy\"},{\"title\":\"US-China trade talks resume in Geneva\",\"url\":\"https://www.example.com/world/us-china-trade-talks\"}]",
+    "toolCallId": "75614ff9-ce14-4d97-8433-28e0bb7a08ed"
+  },
+  {
+    "role": "code_result",
+    "id": "JZsSpZjh0",
+    "result": {
+      "status": "success",
+      "data": {}
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "Here are the latest **sport news** and **international affairs news**:\n\n### Sport News\n\n- [UEFA Champions League: Real Madrid advances to semifinals](https://www.example.com/sport/real-madrid-semifinals)\n- [NBA: Lakers secure playoff spot with win over Warriors](https://www.example.com/sport/lakers-playoffs)\n- [Tennis: French Open set to begin next week](https://www.example.com/sport/french-open-preview)\n\n### International Affairs News\n\n- [UN calls for ceasefire in Middle East amid escalating tensions](https://www.example.com/world/un-ceasefire-middle-east)\n- [EU leaders meet to discuss climate policy reforms](https://www.example.com/world/eu-climate-policy)\n- [US-China trade talks resume in Geneva](https://www.example.com/world/us-china-trade-talks)"
+  }
+]
 ```

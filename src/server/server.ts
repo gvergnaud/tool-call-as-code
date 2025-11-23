@@ -47,10 +47,11 @@ import { getRunTypescriptToolAndSystemMessage } from "./run-typescript-tool";
  */
 
 export const server = async (
-  messages: ClientMessage[],
-  tools: ToolWithOutput[]
+  inputMessages: readonly ClientMessage[],
+  tools: readonly ToolWithOutput[],
+  outputMessages: readonly ClientMessage[] = []
 ): Promise<ClientMessage[]> => {
-  const parsed = parseClientMessages(messages);
+  const parsed = parseClientMessages([...inputMessages, ...outputMessages]);
 
   switch (parsed.mode) {
     case "code": {
@@ -72,14 +73,17 @@ export const server = async (
             },
           } satisfies CodeResultMessage;
 
-          return server([...messages, codeResultMessage], tools);
+          return server(inputMessages, tools, [
+            ...outputMessages,
+            codeResultMessage,
+          ]);
         }
         case "error": {
           const partialEvaluation = result.error;
           const assistantMessage =
             partialEvaluationToAssistantMessage(partialEvaluation);
 
-          return [...messages, assistantMessage];
+          return [...outputMessages, assistantMessage];
         }
         default: {
           const exhaustive: never = result;
@@ -90,17 +94,17 @@ export const server = async (
     case "llm": {
       const assistantMessage = await sendToLLM(parsed.messages, tools);
       if (assistantMessage.toolCalls?.length) {
-        return server(
-          [
-            ...messages,
-            ...serverAssistantMessageToClientMessages(assistantMessage),
-          ],
-          tools
-        );
+        const newClientMessages =
+          serverAssistantMessageToClientMessages(assistantMessage);
+
+        return server(inputMessages, tools, [
+          ...outputMessages,
+          ...newClientMessages,
+        ]);
       }
 
       return [
-        ...messages,
+        ...outputMessages,
         ...serverAssistantMessageToClientMessages(assistantMessage),
       ];
     }
@@ -121,8 +125,8 @@ export const server = async (
  * - We replace tools with a `run_typescript` tool that has a description with these types.
  */
 async function sendToLLM(
-  messages: ServerMessage[],
-  tools: ToolWithOutput[]
+  messages: readonly ServerMessage[],
+  tools: readonly ToolWithOutput[]
 ): Promise<ServerAssistantMessage> {
   const { runTypescriptTool, systemMessage } =
     await getRunTypescriptToolAndSystemMessage(tools);

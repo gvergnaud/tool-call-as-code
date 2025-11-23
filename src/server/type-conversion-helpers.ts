@@ -92,6 +92,9 @@ export function parseClientMessages(messages: ClientMessage[]):
   };
 }
 
+/**
+ * Folds code execution history slices into `run_typescript` tool calls and tool messages.
+ */
 const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
   type Acc = {
     ctx: { type: "code"; id: string } | { type: "normal" };
@@ -208,6 +211,9 @@ const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
 };
 
 /**
+ * Turns a code execution slice of history into a list of tool states,
+ * to later compute a partial evaluation object.
+ *
  * - Finds the last assistant message without tool calls in the history
  * - find all assistant messages with tool calls starting after this message
  * - match tool calls with tool message in the history
@@ -273,6 +279,10 @@ const messagesToToolState = (history: StandardMessage[]): ToolState[] => {
   return toolStates;
 };
 
+/**
+ * If the assistant message contains a run_typescript tool call,
+ * turn it into a code message.
+ */
 export const serverAssistantMessageToClientMessages = (
   message: ServerAssistantMessage
 ): ClientMessage[] => {
@@ -288,6 +298,10 @@ export const serverAssistantMessageToClientMessages = (
     : [{ role: "assistant", content: message.content }];
 };
 
+/**
+ * create an assistant message with tool calls from pending
+ * tool states.
+ */
 export const partialEvaluationToAssistantMessage = (
   partialEvaluation: PartialEvaluation
 ): AssistantMessage => {

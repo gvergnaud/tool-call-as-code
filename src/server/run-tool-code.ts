@@ -156,7 +156,7 @@ export type ToolState = PendingTool | ResolvedTool | RejectedTool;
 //   - A result object, contain the final result of run_typescript
 export async function runToolCode(
   partialEvaluation: PartialEvaluation,
-  tools: Tool[]
+  tools: readonly Tool[]
 ): Promise<Result<unknown, PartialEvaluation>> {
   const isolate = new Isolate({ memoryLimit: 8 });
 

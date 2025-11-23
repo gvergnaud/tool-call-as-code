@@ -5,7 +5,7 @@ import { Tool } from "@mistralai/mistralai/models/components";
 import { capitalize } from "remeda";
 
 export const getRunTypescriptToolAndSystemMessage = async (
-  tools: ToolWithOutput[]
+  tools: readonly ToolWithOutput[]
 ): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> => {
   const tsDeclarations = await toolDefinitionsToTypeScriptTypes(tools);
 
@@ -90,7 +90,7 @@ Rational:
 };
 
 const toolDefinitionsToTypeScriptTypes = async (
-  tools: ToolWithOutput[]
+  tools: readonly ToolWithOutput[]
 ): Promise<string> => {
   const tsDeclarations = await Promise.all(
     tools.map(async (tool) => {
