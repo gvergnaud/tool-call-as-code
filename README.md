@@ -73,3 +73,9 @@ Vitest verifies that pending tool calls are surfaced, replayed with resolved res
 ---
 
 This POC shows that code-mode style tool orchestration can keep the server stateless and still delegate execution to client-owned implementations, preserving the benefits of Cloudflare’s approach while loosening its deployment constraints.
+
+## Example client conversation
+
+```json
+
+```

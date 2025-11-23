@@ -2,7 +2,6 @@ import { Mistral } from "@mistralai/mistralai";
 import {
   ChatCompletionChoice,
   Tool,
-  ToolMessage,
 } from "@mistralai/mistralai/models/components";
 import { StandardMessage } from "../types";
 
