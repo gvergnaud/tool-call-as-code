@@ -40,15 +40,21 @@ type PromiseInstruction<A, B> =
       value: B;
     };
 
-// - tools are implemented as a promise that either rejects a:
-//   - newToolCall message, containing name and args
-//   - A mismatched tool call message (when the toolcall executed doesn’t match the current stack)
-// - Or returns the value from the stack
+/**
+ * - tools are implemented as a promise that either rejects a:
+ *   - newToolCall message, containing name and args
+ *   - A mismatched tool call message (when the toolcall executed doesn’t match the current stack)
+ * - Or returns the value from the stack
+ *
+ * If a tool call isn't present on the stack, we mutate the second parameter
+ * and append a pending tool call to the list.
+ */
 const createToolCallImplementation = (
   toolStates: readonly ToolState[],
   mutableToolStatesOutput: ToolState[]
 ) => {
   let index = 0;
+
   return (
     toolName: string,
     toolArgs: Record<string, unknown>
@@ -64,6 +70,10 @@ const createToolCallImplementation = (
           NewToolCall | MismatchedToolCall | UnexpectedPendingTool | Error
         >
       >()
+      // should never happen. It should be
+      // either undefined, resolved, or rejected.
+      // We return an error just in case the
+      // implementation is not correct.
       .with({ type: "pendingTool" }, (item) => {
         return {
           type: "reject",
@@ -94,6 +104,7 @@ const createToolCallImplementation = (
           } satisfies NewToolCall,
         };
       })
+
       .with({ type: "resolvedTool" }, (item) => {
         mutableToolStatesOutput.push({
           id: item.id,
@@ -106,6 +117,7 @@ const createToolCallImplementation = (
           value: item.result,
         };
       })
+
       .with({ type: "rejectedTool" }, (item) => {
         mutableToolStatesOutput.push({
           id: item.id,
@@ -128,6 +140,8 @@ export type PartialEvaluation = {
   toolState: ToolState[];
 };
 
+export type ToolState = PendingTool | ResolvedTool | RejectedTool;
+
 export type PendingTool = {
   type: "pendingTool";
   id: string;
@@ -149,8 +163,6 @@ export type RejectedTool = {
   error: Error;
 };
 
-export type ToolState = PendingTool | ResolvedTool | RejectedTool;
-
 // - The run_code function can either return
 //   - a PartialEvaluation object with { code: string, toolState: (PendingTool | ResolvedTool | RejectedTool)[] }
 //   - A result object, contain the final result of run_typescript
@@ -165,6 +177,8 @@ export async function runToolCode(
 
     await context.global.set("global", context.global.derefInto());
 
+    // Mutable reference, used to collect tool calls
+    // the code needs to execute.
     const toolStatesOutput: ToolState[] = [];
 
     const toolCallImplementations = createToolCallImplementation(
@@ -172,12 +186,12 @@ export async function runToolCode(
       toolStatesOutput
     );
 
+    // We collect the return value or error from the
+    // main function here.
     let collectedOutput: Result<unknown, unknown>[] = [];
-
     const collectOutput = (output: Result<unknown, unknown>) => {
       collectedOutput.push(output);
     };
-
     await context.global.set(`$collectOutput`, collectOutput);
 
     for (const tool of tools) {
@@ -187,6 +201,12 @@ export async function runToolCode(
           toolCallImplementations(tool.function.name, input)
       );
     }
+
+    // tools are added in scope here.
+    // There are some bindings to turn
+    // `PromiseInstruction` object into
+    // actual promises, because we can
+    // only pass serializable values to the isolate.
     const addedFunctions = tools
       .map((tool) =>
         `
@@ -239,7 +259,7 @@ main().then(
     if (newToolCalls.length !== errors.length) {
       throw new Error(
         "Unexpected error: some errors are not new tool calls:" +
-          JSON.stringify(errors)
+          JSON.stringify(errors, null, 2)
       );
     }
 

@@ -13,17 +13,7 @@ import { PartialEvaluation, ToolState } from "./run-tool-code";
 import { match, P } from "ts-pattern";
 import { ToolCall } from "@mistralai/mistralai/models/components";
 
-/**
- * Takes a list of client messages and:
- * - if there a CodeMessage without a corresponding CodeResultMessage
- *   at the end of the history, we are in "code" mode. We need to extract
- *   the code block from the last CodeMessage, and compute an partialEvaluation
- *   from the list of messages since the CodeMessage (should only be Assistant and Tool messages).
- * - otherwise we are in "llm" mode. We loop over the list of client messages, and turn
- *   CodeMessage ... CodeResultMessage pairs into a run_typescript tool_call and a tool message with
- *   the result, and send that to the LLM.
- */
-export function parseClientMessages(messages: ClientMessage[]):
+export type ParseClientMessagesResult =
   | {
       mode: "code";
       code: string;
@@ -39,7 +29,21 @@ export function parseClientMessages(messages: ClientMessage[]):
       errorType:
         | "result_with_no_code_block"
         | "code_slice_containing_unexpected_messages";
-    } {
+    };
+
+/**
+ * Takes a list of client messages and:
+ * - if there a CodeMessage without a corresponding CodeResultMessage
+ *   at the end of the history, we are in "code" mode. We need to extract
+ *   the code block from the last CodeMessage, and compute an partialEvaluation
+ *   from the list of messages since the CodeMessage (should only be Assistant and Tool messages).
+ * - otherwise we are in "llm" mode. We loop over the list of client messages, and turn
+ *   CodeMessage ... CodeResultMessage pairs into a run_typescript tool_call and a tool message with
+ *   the result, and send that to the LLM.
+ */
+export function parseClientMessages(
+  messages: ClientMessage[]
+): ParseClientMessagesResult {
   const lastCodeIndex = findLastIndex(messages, (x) => x.role === "code");
   const lastCodeResultIndex = findLastIndex(
     messages,

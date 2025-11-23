@@ -4,6 +4,11 @@ import { ToolWithOutput } from "../types";
 import { Tool } from "@mistralai/mistralai/models/components";
 import { capitalize } from "remeda";
 
+/**
+ * Turns tool definition into a TypeScript type declaration
+ * included in a system message, and returns it as well as
+ * a `run_typescript` tool definition.
+ */
 export const getRunTypescriptToolAndSystemMessage = async (
   tools: readonly ToolWithOutput[]
 ): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> => {

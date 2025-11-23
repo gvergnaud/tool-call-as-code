@@ -73,6 +73,10 @@ export const server = async (
             },
           } satisfies CodeResultMessage;
 
+          // in case of success, recurse
+          // so the we switch back to LLM mode
+          // and the LLM get's called to
+          // generate an assistant message.
           return server(inputMessages, tools, [
             ...outputMessages,
             codeResultMessage,
@@ -93,6 +97,11 @@ export const server = async (
     }
     case "llm": {
       const assistantMessage = await sendToLLM(parsed.messages, tools);
+
+      // recurse if there's a tool call,
+      // so the run_typescript tool call
+      // get executed and turned into
+      // client messages.
       if (assistantMessage.toolCalls?.length) {
         const newClientMessages =
           serverAssistantMessageToClientMessages(assistantMessage);
@@ -103,6 +112,7 @@ export const server = async (
         ]);
       }
 
+      // otherwise return output messages with the assistant message.
       return [
         ...outputMessages,
         ...serverAssistantMessageToClientMessages(assistantMessage),
