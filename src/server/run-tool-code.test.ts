@@ -26,6 +26,17 @@ async function main() {
 }
 `;
 
+const SEQUENTIAL_WEB_SEARCH = `
+async function main() {
+  const sportNews = await webSearch({ query: "sport news" });
+  const internationalAffairesNews = await webSearch({ query: "international affaires news" });
+  return {
+    sportNews,
+    internationalAffairesNews,
+  };
+}
+`;
+
 const webSearchTool = {
   type: "function",
   function: {
@@ -121,6 +132,110 @@ describe("runToolCode", () => {
               name: "webSearch",
               arguments: { query: "international affaires news" },
             },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+  });
+
+  it("should support sequential tool calls", async () => {
+    const result = await runToolCode(
+      {
+        code: SEQUENTIAL_WEB_SEARCH,
+        toolState: [],
+      },
+      [webSearchTool]
+    );
+
+    expect(result).toEqual({
+      type: "error",
+      error: {
+        code: SEQUENTIAL_WEB_SEARCH,
+        toolState: [
+          {
+            type: "pendingTool",
+            id: expect.any(String),
+            function: { name: "webSearch", arguments: { query: "sport news" } },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+
+    const result2 = await runToolCode(
+      {
+        code: SEQUENTIAL_WEB_SEARCH,
+        toolState: [
+          {
+            type: "resolvedTool",
+            id: (result as Extract<typeof result, { type: "error" }>).error
+              .toolState[0].id,
+            result: [{ title: "sport news", url: "https://www.google.com" }],
+          },
+        ],
+      },
+      [webSearchTool]
+    );
+
+    const firstId = (result as Extract<typeof result, { type: "error" }>).error
+      .toolState[0].id;
+
+    expect(result2).toEqual({
+      type: "error",
+      error: {
+        code: SEQUENTIAL_WEB_SEARCH,
+        toolState: [
+          {
+            type: "resolvedTool",
+            id: firstId,
+            result: [{ title: "sport news", url: "https://www.google.com" }],
+          },
+          {
+            type: "pendingTool",
+            id: expect.any(String),
+            function: {
+              name: "webSearch",
+              arguments: { query: "international affaires news" },
+            },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+
+    const secondId = (result2 as Extract<typeof result2, { type: "error" }>)
+      .error.toolState[1].id;
+
+    const result3 = await runToolCode(
+      {
+        code: SEQUENTIAL_WEB_SEARCH,
+        toolState: [
+          {
+            type: "resolvedTool",
+            id: firstID,
+            result: [{ title: "sport news", url: "https://www.google.com" }],
+          },
+          {
+            type: "resolvedTool",
+            id: secondId,
+            result: [
+              {
+                title: "international affaires news",
+                url: "https://www.google.com",
+              },
+            ],
+          },
+        ],
+      },
+      [webSearchTool]
+    );
+
+    expect(result3).toEqual({
+      type: "success",
+      value: {
+        sportNews: [{ title: "sport news", url: "https://www.google.com" }],
+        internationalAffairesNews: [
+          {
+            title: "international affaires news",
+            url: "https://www.google.com",
           },
         ],
       },

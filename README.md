@@ -82,7 +82,7 @@ const messageHistoryExample [
   User("Compare news in france and in the us today"),
 
   Code("code_1", `
-    const usNews = webSearch("news US today");
+    const usNews = await webSearch("news US today");
     const frenchNews = await webSearch("actualités en france aujourd'hui");
 
     return { usNews, frenchNews };
