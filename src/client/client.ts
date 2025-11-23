@@ -1,15 +1,12 @@
 import { isMatching, P } from "ts-pattern";
 import z from "zod";
-import { server } from "./server/server";
-import {
-  AssistantMessage,
-  ClientMessage,
-  ToolMessage,
-  ToolWithOutput,
-} from "./types";
+import { Agent } from "./Agent";
+
+// In a real-world implementation this would be an HTTP call.
+import { server } from "../server/server";
 
 export async function client() {
-  const agent = new CodeModeAgent(
+  const agent = new Agent(
     "You are a helpful assistant that can search the web, using the `webSearch` tool.",
     {
       webSearch: {
@@ -80,83 +77,3 @@ export async function client() {
 
   console.log(JSON.stringify(result, null, 2));
 }
-
-export class CodeModeAgent {
-  constructor(
-    private systemPrompt: string,
-    private tools: Record<
-      string,
-      {
-        description: string;
-        parameters: z.ZodType;
-        returned: z.ZodType;
-        implementation: (input: unknown) => Promise<unknown>;
-      }
-    >,
-    private complete: (
-      messages: ClientMessage[],
-      tools: ToolWithOutput[]
-    ) => Promise<ClientMessage[]>
-  ) {}
-
-  getToolDefinitions(): ToolWithOutput[] {
-    return Object.entries(this.tools).map(([toolName, tool]) => ({
-      type: "function",
-      function: {
-        name: toolName,
-        parameters: z.toJSONSchema(tool.parameters),
-        returnSchema: z.toJSONSchema(tool.returned),
-        description: tool.description,
-        strict: true,
-      },
-    }));
-  }
-
-  async run(messagesProp: ClientMessage[]): Promise<ClientMessage[]> {
-    const messages: ClientMessage[] = messagesProp;
-
-    const toolDefinitions = this.getToolDefinitions();
-
-    while (true) {
-      const newMessages = await this.complete(
-        [
-          { role: "system", content: this.systemPrompt },
-          ...messages,
-        ] satisfies ClientMessage[],
-        toolDefinitions
-      );
-
-      messages.push(...newMessages);
-
-      const assistantMessage = newMessages.at(-1)! as AssistantMessage;
-
-      if (!assistantMessage.toolCalls) {
-        return messages;
-      }
-
-      const toolCalls = assistantMessage.toolCalls ?? [];
-
-      const toolMessages = await Promise.all(
-        toolCalls.map(async (toolCall): Promise<ToolMessage> => {
-          const args = parseArguments(toolCall.function.arguments);
-          const result =
-            await this.tools[toolCall.function.name].implementation(args);
-          return {
-            role: "tool",
-            content: JSON.stringify(result),
-            toolCallId: toolCall.id!,
-          };
-        })
-      );
-
-      messages.push(...toolMessages);
-    }
-  }
-}
-
-const parseArguments = (args: string | Record<string, unknown>) => {
-  if (typeof args === "string") {
-    return JSON.parse(args);
-  }
-  return args;
-};
