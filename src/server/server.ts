@@ -15,7 +15,7 @@ import {
 } from "../types";
 import { PartialEvaluation, runToolCode, ToolState } from "./run-tool-code";
 import { match, P } from "ts-pattern";
-import { Tool } from "@mistralai/mistralai/models/components";
+import { Tool, ToolCall } from "@mistralai/mistralai/models/components";
 import { complete } from "./llm";
 
 /**
@@ -80,10 +80,10 @@ export const server = async (
         }
         case "error": {
           const partialEvaluation = result.error;
-          return [
-            ...messages,
-            ...partialEvaluationToMessages(partialEvaluation),
-          ];
+          const assistantMessage =
+            partialEvaluationToAssistantMessage(partialEvaluation);
+
+          return [...messages, assistantMessage];
         }
         default: {
           const exhaustive: never = result;
@@ -505,36 +505,25 @@ Rational:
     .message as ServerAssistantMessage;
 }
 
-const partialEvaluationToMessages = (
+const partialEvaluationToAssistantMessage = (
   partialEvaluation: PartialEvaluation
-): StandardMessage[] => {
-  return partialEvaluation.toolState.map(
-    (toolState): StandardMessage =>
-      match(toolState)
-        .returnType<StandardMessage>()
-        .with({ type: "pendingTool" }, (toolState) => ({
-          role: "assistant",
-          content: "",
-          toolCalls: [
-            {
-              id: toolState.id,
-              function: toolState.function,
-            },
-          ],
-        }))
-        .with({ type: "resolvedTool" }, (toolState) => ({
-          role: "tool",
-          toolCallId: toolState.id,
-          content:
-            typeof toolState.result === "string"
-              ? toolState.result
-              : JSON.stringify(toolState.result),
-        }))
-        .with({ type: "rejectedTool" }, (toolState) => ({
-          role: "tool",
-          toolCallId: toolState.id,
-          content: toolState.error.message,
-        }))
-        .exhaustive()
-  );
+): AssistantMessage => {
+  return {
+    role: "assistant",
+    content: "",
+    toolCalls: partialEvaluation.toolState.flatMap(
+      (toolState, index): ToolCall | [] =>
+        match(toolState)
+          .returnType<ToolCall | []>()
+          .with({ type: "pendingTool" }, (toolState) => ({
+            type: "function",
+            id: toolState.id,
+            index,
+            function: toolState.function,
+          }))
+          .with({ type: "resolvedTool" }, (toolState) => [])
+          .with({ type: "rejectedTool" }, (toolState) => [])
+          .exhaustive()
+    ),
+  };
 };

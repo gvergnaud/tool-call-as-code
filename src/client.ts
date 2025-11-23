@@ -29,7 +29,11 @@ export async function client() {
     }
   );
   const result = await agent.run([
-    { role: "user", content: "What is the news today?" },
+    {
+      role: "user",
+      content:
+        "Look for sport news and international affaires news in parallel and give me all results.",
+    },
   ]);
 
   console.log(result);
@@ -89,6 +93,8 @@ export class CodeModeAgent {
       }
 
       const toolCalls = assistantMessage.toolCalls ?? [];
+
+      console.log("TOOL CALLS", JSON.stringify(toolCalls, null, 2));
 
       const toolMessages = await Promise.all(
         toolCalls.map(async (toolCall): Promise<ToolMessage> => {

@@ -4,7 +4,6 @@ import {
   Tool,
   ToolMessage,
 } from "@mistralai/mistralai/models/components";
-import z from "zod";
 import { StandardMessage } from "../types";
 
 // Initialize the Mistral client
