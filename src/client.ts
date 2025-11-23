@@ -94,8 +94,6 @@ export class CodeModeAgent {
 
       const toolCalls = assistantMessage.toolCalls ?? [];
 
-      console.log("TOOL CALLS", JSON.stringify(toolCalls, null, 2));
-
       const toolMessages = await Promise.all(
         toolCalls.map(async (toolCall): Promise<ToolMessage> => {
           const args = parseArguments(toolCall.function.arguments);
