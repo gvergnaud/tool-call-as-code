@@ -1,14 +1,22 @@
-import { findLastIndex, indexBy } from "remeda";
+import { compile } from "json-schema-to-typescript";
+import { findLastIndex, indexBy, capitalize } from "remeda";
 import {
+  AssistantMessage,
   ClientMessage,
+  CodeMessage,
   CodeResultMessage,
-  Message,
+  RunTypeScriptToolCall,
   ServerAssistantMessage,
   ServerMessage,
+  StandardMessage,
+  SystemMessage,
+  ToolMessage,
+  ToolWithOutput,
 } from "../types";
 import { PartialEvaluation, runToolCode, ToolState } from "./run-tool-code";
-import { match } from "ts-pattern";
+import { match, P } from "ts-pattern";
 import { Tool } from "@mistralai/mistralai/models/components";
+import { complete } from "./llm";
 
 /**
  * There are two types of message histories:
@@ -42,11 +50,9 @@ import { Tool } from "@mistralai/mistralai/models/components";
  * history into ClientMessages
  */
 
-const TODO = new Error("TODO");
-
 export const server = async (
   messages: ClientMessage[],
-  tools: Tool[]
+  tools: ToolWithOutput[]
 ): Promise<ClientMessage[]> => {
   const parsed = parseClientMessages(messages);
 
@@ -86,13 +92,26 @@ export const server = async (
       }
     }
     case "llm": {
-      const assistantMessage = await sendToLLM(
-        clientMessagesToServerMessages(parsed.messages),
-        tools
-      );
+      const assistantMessage = await sendToLLM(parsed.messages, tools);
+      if (assistantMessage.toolCalls?.length) {
+        return server(
+          [
+            ...messages,
+            ...serverAssistantMessageToClientMessages(assistantMessage),
+          ],
+          tools
+        );
+      }
 
-      return server([...messages, assistantMessage], tools);
+      return [
+        ...messages,
+        ...serverAssistantMessageToClientMessages(assistantMessage),
+      ];
     }
+    case "error": {
+      throw new Error(`Unexpected error: ${parsed.errorType}`);
+    }
+
     default: {
       const exhaustive: never = parsed;
       return exhaustive;
@@ -119,10 +138,180 @@ function parseClientMessages(messages: ClientMessage[]):
     }
   | {
       mode: "llm";
-      messages: ClientMessage[];
+      messages: ServerMessage[];
+    }
+  | {
+      mode: "error";
+      errorType:
+        | "result_with_no_code_block"
+        | "code_slice_containing_unexpected_messages";
     } {
-  throw TODO;
+  const lastCodeIndex = findLastIndex(messages, (x) => x.role === "code");
+  const lastCodeResultIndex = findLastIndex(
+    messages,
+    (x) => x.role === "code_result"
+  );
+
+  if (lastCodeIndex === -1 && lastCodeResultIndex === -1) {
+    return {
+      mode: "llm",
+      messages: clientToServerMessages(messages),
+    };
+  }
+
+  if (lastCodeIndex === -1)
+    return { mode: "error", errorType: "result_with_no_code_block" };
+
+  const isCodeMode = lastCodeIndex > lastCodeResultIndex;
+
+  if (isCodeMode) {
+    const codeMessage = messages[lastCodeIndex] as CodeMessage;
+    const currentCodeEvaluationSlice = messages.slice(lastCodeIndex + 1);
+
+    if (
+      !currentCodeEvaluationSlice.every(
+        (x): x is AssistantMessage | ToolMessage =>
+          x.role === "assistant" || x.role === "tool"
+      )
+    ) {
+      return {
+        mode: "error",
+        errorType: "code_slice_containing_unexpected_messages",
+      };
+    }
+
+    const partialEvaluation: PartialEvaluation = {
+      code: codeMessage.code,
+      toolState: messagesToToolState(currentCodeEvaluationSlice),
+    };
+    return {
+      mode: "code",
+      code: codeMessage.code,
+      id: codeMessage.id,
+      partialEvaluation,
+    };
+  }
+
+  return {
+    mode: "llm",
+    messages: clientToServerMessages(messages),
+  };
 }
+
+const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
+  type Acc = {
+    ctx: { type: "code"; id: string } | { type: "normal" };
+    messages: ServerMessage[];
+  };
+  return messages.reduce<Acc>(
+    (acc, message) => {
+      return match(acc)
+        .returnType<Acc>()
+        .with({ ctx: { type: "normal" } }, ({ messages }) => {
+          return (
+            match(message)
+              .returnType<Acc>()
+              // transition to code context
+              .with({ role: "code" }, (message) => ({
+                ctx: { type: "code", id: message.id },
+                messages: messages.concat([
+                  {
+                    role: "assistant",
+                    content: "",
+                    toolCalls: [
+                      {
+                        id: message.id,
+                        function: {
+                          name: "run_typescript",
+                          arguments: JSON.stringify({ code: message.code }),
+                        },
+                      },
+                    ],
+                  },
+                ]),
+              }))
+              .with({ role: P.union("system", "user") }, (message) => ({
+                ctx: { type: "normal" },
+                messages: messages.concat([message]),
+              }))
+              .with(
+                {
+                  role: "assistant",
+                  toolCalls: P.union(
+                    P.array(RunTypeScriptToolCall),
+                    P.nullish
+                  ).optional(),
+                },
+                (message) => ({
+                  ctx: { type: "normal" },
+                  messages: messages.concat([message]),
+                })
+              )
+              // error cases: code_result before a code message
+              .with({ role: "code_result" }, () => {
+                throw new Error(
+                  "Unexected code_result message without a code message"
+                );
+              })
+              // error case: a tool result outside of code messages.
+              .with({ role: "tool" }, () => {
+                throw new Error(
+                  "With code mode enabled, tool messages are only expected in between a code and a code_result message"
+                );
+              })
+              // invalid tool call
+              .with({ role: "assistant" }, () => {
+                throw new Error(
+                  "Assistant message containing an non `run_typescript` tool call"
+                );
+              })
+              .exhaustive()
+          );
+        })
+        .with({ ctx: { type: "code" } }, ({ ctx, messages }) => {
+          return (
+            match(message)
+              .returnType<Acc>()
+              // Transition back to normal
+              .with({ role: "code_result", id: ctx.id }, ({ result }) => {
+                return {
+                  ctx: { type: "normal" },
+                  messages: messages.concat([
+                    {
+                      role: "tool",
+                      toolCallId: ctx.id,
+                      content: JSON.stringify(result),
+                    },
+                  ]),
+                };
+              })
+              .with({ role: "code_result" }, ({ id }) => {
+                throw new Error(
+                  `Wrong code result id. Expected '${ctx.id}' and received '${id}'.`
+                );
+              })
+              .with({ role: P.union("assistant", "tool") }, () => ({
+                ctx,
+                messages,
+              }))
+              .with({ role: "code" }, () => {
+                throw new Error(
+                  "Unexpected 'code' message following an unclosed 'code' message."
+                );
+              })
+              .with({ role: P.union("system", "user") }, ({ role }) => {
+                throw new Error(
+                  `Unexpected '${role}' message in a 'code' context.`
+                );
+              })
+              .exhaustive()
+          );
+        })
+        .exhaustive();
+    },
+    { ctx: { type: "normal" }, messages: [] }
+  ).messages;
+};
 
 /**
  * - Finds the last assistant message without tool calls in the history
@@ -131,7 +320,7 @@ function parseClientMessages(messages: ClientMessage[]):
  * - turn these tool_call / tool message pairs into tool states
  * - return the tool states
  */
-const messagesToToolState = (history: Message[]): ToolState[] => {
+const messagesToToolState = (history: StandardMessage[]): ToolState[] => {
   let lastAssistantMessageWithoutToolCallsIndex = findLastIndex(
     history,
     (message) => message.role === "assistant" && !message.toolCalls?.length
@@ -190,55 +379,139 @@ const messagesToToolState = (history: Message[]): ToolState[] => {
   return toolStates;
 };
 
+const serverAssistantMessageToClientMessages = (
+  message: ServerAssistantMessage
+): ClientMessage[] => {
+  const toolCall = message.toolCalls?.[0];
+  return toolCall
+    ? [
+        {
+          role: "code",
+          code: JSON.parse(toolCall.function.arguments).code,
+          id: toolCall.id,
+        },
+      ]
+    : [{ role: "assistant", content: message.content }];
+};
+
 /**
  * Before sending anything to the LLM we:
  * - Turn tools into typescript types
  * - We replace tools with a `run_typescript` tool that has a description with these types.
  */
-function sendToLLM(
+async function sendToLLM(
   messages: ServerMessage[],
-  tools: Tool[]
+  tools: ToolWithOutput[]
 ): Promise<ServerAssistantMessage> {
-  const toolDefinitions = tools.map((tool) => ({
-    type: "function",
-    function: tool,
-  }));
-
-  const runTypescriptTool = {
+  const runTypescriptTool: Tool = {
     type: "function",
     function: {
       name: "run_typescript",
+      description:
+        "Enables running TypeScript code in a sandbox environment.\n\nAlways define a `main` async function, and don't call it yourself. The sandbox expects this `main` function to be defined and calls it automatically.",
       parameters: {
         type: "object",
         properties: { code: { type: "string" } },
         required: ["code"],
       },
+      strict: true,
     },
   };
 
-  throw TODO;
-}
+  const tsDeclarations = await Promise.all(
+    tools.map(async (tool) => {
+      const argTypeName = `${capitalize(tool.function.name)}Arg`;
+      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
+      const argsTs = await compile(tool.function.parameters, argTypeName, {
+        bannerComment: "",
+      });
 
-const clientMessagesToServerMessages = (
-  messages: ClientMessage[]
-): ServerMessage[] => {
-  const runTypescriptHistory = messages.reduce<ServerMessage[]>(
-    (acc, message) => {
-      // TODO
-      return acc;
-    },
-    []
+      const outputTs = tool.function.returnSchema
+        ? await compile(tool.function.returnSchema, returnTypeName, {
+            bannerComment: "",
+          })
+        : `type ${returnTypeName} = unknown;`;
+
+      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
+
+      return `${argsTs}\n\n${outputTs}\n\n${functionTs}`;
+    })
   );
-  throw TODO;
-};
+
+  const toolSystemMessage: SystemMessage = {
+    role: "system",
+    content: `
+## How to use tools
+
+You have access to a single \`run_typescript\` tool that enables you to run
+TypeScript code in a sandbox environment. This sandbox has access to ES2015 - ES2022
+language features, but doesn't have access to NodeJS or Browser API features.
+
+### The \`main\` function
+
+The sandboxed environment expects a \`main\` async function, and will run this function
+automatically. You MUST generate all of your code in this \`async function main()\` block,
+otherwise the call will fail. You don't need to call main, as the sandbox will do it for you.
+
+### Available tool functions
+
+In your \`main\` function, you can write arbitrary snippets of TypeScript code, as long as it only uses standard EcmaScript features, or one or several of the available tool functions defined below:
+
+Tool functions:
+\`\`\`ts
+${tsDeclarations.join("\n\n")}
+\`\`\`
+
+Anytime you want to call one of these, you should call the \`run_typescript\` tool and write 
+TypeScript code that uses the tool function.
+
+The \`run_typescript\` tool result will be the returned value from your main function.
+
+### Example
+
+1. Assuming you have the following available functions:
+
+\`\`\`ts
+type GetArticlesArg = { query: string };
+
+type GetArticlesReturned = { title: string, description: string }[];
+
+declare function getArticles(arg: GetArticlesArg): Promise<GetArticlesReturned>;
+\`\`\`
+
+2. And the user query is "find articles about sport news, and only include articles with the word 'basketball' in the title."
+
+3. You should call \`run_typescript\` with the following "code" parameter:
+
+\`\`\`ts
+const runTypeScriptArguments = {
+  code: \`
+  async function main() {
+    const results = await getArticles({ query: "sport news" });
+    return results.filter((result) => result.title.includes("basketball"));
+  }
+  \`
+}
+\`\`\`
+
+Rational: 
+- You use the \`getArticles\` function to get relevant articles, and then filter the result as instructed by the user query.
+- You don't need to call main because the sandbox does it for you.
+
+`.trim(),
+  };
+
+  return (await complete([toolSystemMessage, ...messages], [runTypescriptTool]))
+    .message as ServerAssistantMessage;
+}
 
 const partialEvaluationToMessages = (
   partialEvaluation: PartialEvaluation
-): Message[] => {
+): StandardMessage[] => {
   return partialEvaluation.toolState.map(
-    (toolState): Message =>
+    (toolState): StandardMessage =>
       match(toolState)
-        .returnType<Message>()
+        .returnType<StandardMessage>()
         .with({ type: "pendingTool" }, (toolState) => ({
           role: "assistant",
           content: "",
@@ -251,6 +524,7 @@ const partialEvaluationToMessages = (
         }))
         .with({ type: "resolvedTool" }, (toolState) => ({
           role: "tool",
+          toolCallId: toolState.id,
           content:
             typeof toolState.result === "string"
               ? toolState.result
@@ -258,6 +532,7 @@ const partialEvaluationToMessages = (
         }))
         .with({ type: "rejectedTool" }, (toolState) => ({
           role: "tool",
+          toolCallId: toolState.id,
           content: toolState.error.message,
         }))
         .exhaustive()

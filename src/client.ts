@@ -1,15 +1,20 @@
 import z from "zod";
 import { server } from "./server/server";
-import { AssistantMessage, ClientMessage, ToolMessage } from "./types";
-import { Tool } from "@mistralai/mistralai/models/components";
+import {
+  AssistantMessage,
+  ClientMessage,
+  ToolMessage,
+  ToolWithOutput,
+} from "./types";
 
 export async function client() {
   const agent = new CodeModeAgent(
-    "You are a helpful assistant that can search the web.",
+    "You are a helpful assistant that can search the web, using the `webSearch` tool.",
     {
       webSearch: {
         description: "Search the web for information",
         parameters: z.object({ query: z.string() }),
+        returned: z.array(z.object({ title: z.string(), url: z.string() })),
         implementation: async () => {
           return [
             { title: "news today", url: "https://www.google.com" },
@@ -38,21 +43,23 @@ export class CodeModeAgent {
       {
         description: string;
         parameters: z.ZodType;
+        returned: z.ZodType;
         implementation: (input: unknown) => Promise<unknown>;
       }
     >,
     private complete: (
       messages: ClientMessage[],
-      tools: Tool[]
+      tools: ToolWithOutput[]
     ) => Promise<ClientMessage[]>
   ) {}
 
-  getToolDefinitions(): Tool[] {
+  getToolDefinitions(): ToolWithOutput[] {
     return Object.entries(this.tools).map(([toolName, tool]) => ({
       type: "function",
       function: {
         name: toolName,
         parameters: z.toJSONSchema(tool.parameters),
+        returnSchema: z.toJSONSchema(tool.returned),
         description: tool.description,
         strict: true,
       },
@@ -91,7 +98,7 @@ export class CodeModeAgent {
           return {
             role: "tool",
             content: JSON.stringify(result),
-            toolCallId: toolCall.id,
+            toolCallId: toolCall.id!,
           };
         })
       );

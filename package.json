@@ -19,6 +19,7 @@
   "dependencies": {
     "@mistralai/mistralai": "^1.10.0",
     "isolated-vm": "^6.0.2",
+    "json-schema-to-typescript": "^15.0.4",
     "remeda": "^2.32.0",
     "ts-pattern": "^5.9.0",
     "zod": "^4.1.12"

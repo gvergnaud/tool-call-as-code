@@ -6,8 +6,10 @@ import { Result } from "../utils";
 const firstID = crypto.randomUUID();
 
 const CODE = `
-const results = await webSearch({ query: "news today" });
-return results.filter((result) => result.title.includes("news"));
+async function main() {
+  const results = await webSearch({ query: "news today" });
+  return results.filter((result) => result.title.includes("news"));
+}
 `;
 
 const webSearchTool = {

@@ -56,8 +56,6 @@ const createToolCallImplementation = (
     unknown,
     NewToolCall | MismatchedToolCall | UnexpectedPendingTool | Error
   > => {
-    console.log("TOOL CALL IMPLEMENTATION", toolName, toolArgs);
-
     const currentItem = toolStates.at(index);
     const returned = match(currentItem)
       .returnType<
@@ -121,7 +119,6 @@ const createToolCallImplementation = (
         };
       })
       .exhaustive();
-    console.log("TOOL CALL IMPLEMENTATION returned:", returned);
     return returned;
   };
 };
@@ -210,9 +207,8 @@ function ${tool.function.name}(...args) {
       `
 ${addedFunctions}
 
-const main = async () => {
-  ${partialEvaluation.code}
-}
+${partialEvaluation.code}
+
 main().then(
   (result) => {
     $collectOutput({ type: "success", value: result });
