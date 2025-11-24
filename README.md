@@ -112,7 +112,7 @@ const messageHistoryExample [
 #### Tool calling data flow
 
 
-<img width="2664" height="2218" alt="image" src="https://github.com/user-attachments/assets/349048f8-0f28-4e99-afb2-93544666eb30" />
+<img width="2664" height="2218" alt="image" src="https://github.com/user-attachments/assets/34b54646-f790-4d63-b870-8592f4ac96bd" />
 
 
 ### How does it work?
