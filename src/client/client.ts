@@ -291,6 +291,113 @@ const scenarios: Scenario[] = [
     },
     userMessage: "Translate 'Hello World' into French, Spanish, and German.",
   },
+  {
+    name: "11. Crisis Management (Multi-tool)",
+    systemPrompt: "You are a crisis manager. Monitor news and emails.",
+    tools: {
+      webSearch: {
+        description: "Search the web",
+        parameters: z.object({ query: z.string() }),
+        returned: z.array(
+          z.object({ title: z.string(), description: z.string() })
+        ),
+        implementation: mockWebSearch,
+      },
+      readEmails: {
+        description: "Read emails",
+        parameters: z.object({}),
+        returned: z.array(
+          z.object({ from: z.string(), subject: z.string(), body: z.string() })
+        ),
+        implementation: async () => [
+          {
+            from: "security@corp.com",
+            subject: "Alert",
+            body: "Possible data breach detected.",
+          },
+        ],
+      },
+      sendEmail: {
+        description: "Send email",
+        parameters: z.object({ to: z.string(), body: z.string() }),
+        returned: z.string(),
+        implementation: async ({ to }: { to: string }) => `Email sent to ${to}`,
+      },
+    },
+    userMessage:
+      "Check news and emails for 'Data Breach'. If confirmed, draft a response to the board.",
+  },
+  {
+    name: "12. Travel & Meeting (Multi-tool)",
+    systemPrompt: "You are an executive assistant. Manage travel and schedule.",
+    tools: {
+      flightSearch: {
+        description: "Search flights",
+        parameters: z.object({ from: z.string(), to: z.string() }),
+        returned: z.array(z.string()),
+        implementation: async ({ from, to }: any) => [
+          `Flight ${from}->${to} 08:00`,
+        ],
+      },
+      getEvents: {
+        description: "Get schedule",
+        parameters: z.object({ date: z.string() }),
+        returned: z.array(z.object({ title: z.string(), time: z.string() })),
+        implementation: async () => [
+          { title: "Weekly Sync", time: "09:00 AM" },
+        ],
+      },
+      rescheduleEvent: {
+        description: "Reschedule an event",
+        parameters: z.object({ title: z.string(), newTime: z.string() }),
+        returned: z.string(),
+        implementation: async ({ title, newTime }: any) =>
+          `Rescheduled ${title} to ${newTime}`,
+      },
+      webSearch: {
+        description: "Search local info",
+        parameters: z.object({ query: z.string() }),
+        returned: z.array(z.string()),
+        implementation: async () => ["Top rated: The Ivy, Dishoom"],
+      },
+    },
+    userMessage:
+      "I need to fly London -> NY tomorrow morning. Check for flight conflicts with my schedule, reschedule if needed, and find a dinner spot in NY.",
+  },
+  {
+    name: "13. Investment Research (Multi-tool)",
+    systemPrompt:
+      "You are a global investment analyst. Aggregate data from multiple sources.",
+    tools: {
+      webSearch: {
+        description: "Search web",
+        parameters: z.object({ query: z.string() }),
+        returned: z.array(
+          z.object({ title: z.string(), description: z.string() })
+        ),
+        implementation: async () => [
+          {
+            title: "Siemens Energy expands",
+            description: "German renewable sector growing.",
+          },
+        ],
+      },
+      translate: {
+        description: "Translate text",
+        parameters: z.object({ text: z.string(), targetLang: z.string() }),
+        returned: z.string(),
+        implementation: async ({ text }: any) => `[Translated] ${text}`,
+      },
+      getStockPrice: {
+        description: "Get stock price",
+        parameters: z.object({ symbol: z.string() }),
+        returned: z.object({ price: z.number() }),
+        implementation: async () => ({ price: 120.5 }),
+      },
+    },
+    userMessage:
+      "Search for renewable energy news in Germany, translate summaries to English, and check stock price of mentioned companies.",
+  },
 ];
 
 export async function client() {
