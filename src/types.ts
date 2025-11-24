@@ -7,6 +7,7 @@ import type {
   Tool,
 } from "@mistralai/mistralai/models/components";
 import { P } from "ts-pattern";
+import { Result } from "./utils";
 
 /**
  * Standard messages, compliant to the tool calling protocol.
@@ -113,3 +114,17 @@ export type RejectedTool = {
   id: string;
   error: Error;
 };
+
+export type RunToolCodeResult =
+  | {
+      type: "code_result";
+      result: Result<unknown, unknown>;
+    }
+  | {
+      type: "partial_evaluation";
+      partialEvaluation: PartialEvaluation;
+    }
+  | {
+      type: "error";
+      error: unknown;
+    };

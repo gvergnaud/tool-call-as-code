@@ -6,6 +6,7 @@ import {
   ToolWithOutput,
   PartialEvaluation,
   SystemMessage,
+  RunToolCodeResult,
 } from "../types";
 import { complete } from "./llm";
 import {
@@ -14,7 +15,6 @@ import {
   serverAssistantMessageToClientMessages,
 } from "./type-conversion-helpers";
 import { Tool } from "@mistralai/mistralai/models/components";
-import { Result } from "../utils";
 
 // --- HTTP Client Implementations ---
 
@@ -45,7 +45,7 @@ async function getRunTypescriptToolAndSystemMessage(
 async function runToolCode(
   partialEvaluation: PartialEvaluation,
   tools: readonly ToolWithOutput[]
-): Promise<Result<unknown, PartialEvaluation>> {
+): Promise<RunToolCodeResult> {
   const response = await fetch(`${CODE_SERVER_URL}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -59,7 +59,7 @@ async function runToolCode(
     );
   }
 
-  return (await response.json()) as Result<unknown, PartialEvaluation>;
+  return (await response.json()) as RunToolCodeResult;
 }
 
 // --- Server Logic ---
@@ -113,31 +113,58 @@ export const server = async (
         tools
       );
       switch (result.type) {
-        case "success": {
-          const codeResultMessage = {
-            role: "code_result" as const,
-            id: parsed.id,
-            result: {
-              status: "success",
-              data: result.value,
-            },
-          } satisfies CodeResultMessage;
+        case "code_result": {
+          switch (result.result.type) {
+            case "success": {
+              const codeResultMessage = {
+                role: "code_result" as const,
+                id: parsed.id,
+                result: {
+                  status: "success",
+                  data: result.result.value,
+                },
+              } satisfies CodeResultMessage;
 
-          // in case of success, recurse
-          // so the we switch back to LLM mode
-          // and the LLM get's called to
-          // generate an assistant message.
-          return server(inputMessages, tools, [
-            ...outputMessages,
-            codeResultMessage,
-          ]);
+              // in case of success, recurse
+              // so the we switch back to LLM mode
+              // and the LLM get's called to
+              // generate an assistant message.
+              return server(inputMessages, tools, [
+                ...outputMessages,
+                codeResultMessage,
+              ]);
+            }
+            case "error": {
+              // Runtime error in the sandbox -> treat as code result error
+              const codeResultMessage = {
+                role: "code_result" as const,
+                id: parsed.id,
+                result: {
+                  status: "error",
+                  error: result.result.error,
+                },
+              } satisfies CodeResultMessage;
+
+              return server(inputMessages, tools, [
+                ...outputMessages,
+                codeResultMessage,
+              ]);
+            }
+            default: {
+              const exhaustive: never = result.result;
+              return exhaustive;
+            }
+          }
         }
-        case "error": {
-          const partialEvaluation = result.error;
+        case "partial_evaluation": {
+          const partialEvaluation = result.partialEvaluation;
           const assistantMessage =
             partialEvaluationToAssistantMessage(partialEvaluation);
 
           return [...outputMessages, assistantMessage];
+        }
+        case "error": {
+          throw new Error(`Unexpected code execution error: ${result.error}`);
         }
         default: {
           const exhaustive: never = result;

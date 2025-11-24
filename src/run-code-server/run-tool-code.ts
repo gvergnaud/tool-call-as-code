@@ -1,7 +1,7 @@
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
-import { PartialEvaluation, ToolState } from "../types";
+import { PartialEvaluation, ToolState, RunToolCodeResult } from "../types";
 import { Result } from "../utils";
 
 type NewToolCallInternal = {
@@ -128,7 +128,7 @@ const createToolCallImplementation = (
 export async function runToolCode(
   partialEvaluation: PartialEvaluation,
   tools: readonly Tool[]
-): Promise<Result<unknown, PartialEvaluation>> {
+): Promise<RunToolCodeResult> {
   const isolate = new Isolate({ memoryLimit: 8 });
 
   try {
@@ -143,9 +143,9 @@ export async function runToolCode(
       toolStatesOutput
     );
 
-    let collectedOutput: Result<unknown, unknown>[] = [];
+    let collectedOutput: Result<unknown, unknown> | undefined;
     const collectOutput = (output: Result<unknown, unknown>) => {
-      collectedOutput.push(output);
+      collectedOutput = output;
     };
     await context.global.set(`$collectOutput`, collectOutput);
 
@@ -195,83 +195,30 @@ main().then(
 
     await script.run(context);
 
-    const errors = collectedOutput.filter((output) => output.type === "error");
-    const success = collectedOutput.filter(
-      (output) => output.type === "success"
-    );
-
-    if (!errors.length) {
-      return Result.success(success[0]?.value ?? null);
-    }
-
-    const newToolCalls = errors
-      .map((x) => (x as any).error)
-      .filter(isNewToolCall);
-
-    if (newToolCalls.length !== errors.length) {
-      // If it's not a NewToolCall, it's a real error
-      // For serialization purposes we might want to check what it is
-    }
-
-    // If we have errors, check if they are just new tool calls
-    if (newToolCalls.length === errors.length && newToolCalls.length > 0) {
-      return Result.error({
-        code: partialEvaluation.code,
-        toolState: toolStatesOutput,
-      });
-    }
-
-    // If there are other errors, or mixed?
-    // The original logic:
-    /*
-    const newToolCalls = errors.map((x) => x.error).filter(isNewToolCall);
-    if (newToolCalls.length !== errors.length) {
-       throw new Error(...)
-    }
-    return Result.error({...})
-    */
-
-    // The original logic threw an error if there were errors that were NOT new tool calls.
-    // But wait, `collectedOutput` contains `Result` objects.
-    // If script fails with a random error, it is caught in `.catch` and pushed as `{ type: "error", error }`.
-
-    // If it is not a tool call signal, it is a runtime error in the script.
-    // The original code re-throws unexpected errors.
-
-    if (newToolCalls.length !== errors.length) {
-      // We found some errors that are NOT new tool calls.
-      // We should probably return the error result from the script execution?
-      // But runToolCode return signature is Result<unknown, PartialEvaluation>.
-      // This implies success is `unknown` (the result), error is `PartialEvaluation` (more steps needed).
-      // If the script throws a Runtime Error, that's technically a "Success" in that the evaluation finished (with an error).
-      // Or is it?
-      // The existing implementation throws if "Unexpected error: some errors are not new tool calls".
-      // So it seems runtime errors in the user script are treated as System Errors?
-      // Or maybe they should be returned as the result of the execution?
-
-      // Let's look closer at run-tool-code.ts
-      /*
-             if (newToolCalls.length !== errors.length) {
-                throw new Error(
-                    "Unexpected error: some errors are not new tool calls:" +
-                    JSON.stringify(errors, null, 2)
-                );
-             }
-         */
-      // So yes, it throws. I will replicate this behavior.
-      throw new Error(
-        "Unexpected error: some errors are not new tool calls:" +
-          JSON.stringify(errors, null, 2)
-      );
-    }
-
-    return Result.error({
-      code: partialEvaluation.code,
-      toolState: toolStatesOutput,
-    });
+    return match(collectedOutput)
+      .returnType<RunToolCodeResult>()
+      .with(undefined, () => {
+        return { type: "error", error: new Error("No output collected") };
+      })
+      .with({ type: "success" }, (result) => {
+        return { type: "code_result", result };
+      })
+      .with({ type: "error", error: P.when(isNewToolCall) }, (result) => {
+        return {
+          type: "partial_evaluation",
+          partialEvaluation: {
+            code: partialEvaluation.code,
+            toolState: toolStatesOutput,
+          },
+        };
+      })
+      .with({ type: "error" }, (result) => {
+        return { type: "code_result", result: Result.error(result.error) };
+      })
+      .exhaustive();
   } catch (error) {
     console.error("Unexpected error", error);
-    throw error;
+    return { type: "error", error };
   } finally {
     isolate.dispose();
   }

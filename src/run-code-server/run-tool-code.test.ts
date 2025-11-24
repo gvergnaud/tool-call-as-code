@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runToolCode } from "./run-tool-code";
-import { PartialEvaluation } from "../types";
+import { PartialEvaluation, RunToolCodeResult } from "../types";
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Result } from "../utils";
 
@@ -154,8 +154,8 @@ describe("runToolCode", () => {
     );
 
     expect(result).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: SIMPLE_WEB_SEARCH,
         toolState: [
           {
@@ -165,7 +165,7 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
   });
 
   it("should return a result when all tools are resolved", async () => {
@@ -188,12 +188,15 @@ describe("runToolCode", () => {
     );
 
     expect(result).toEqual({
-      type: "success",
-      value: [
-        { title: "news today", url: "https://www.google.com" },
-        { title: "news this week", url: "https://www.google.com" },
-      ],
-    } satisfies Result<unknown, PartialEvaluation>);
+      type: "code_result",
+      result: {
+        type: "success",
+        value: [
+          { title: "news today", url: "https://www.google.com" },
+          { title: "news this week", url: "https://www.google.com" },
+        ],
+      },
+    } satisfies RunToolCodeResult);
   });
 
   it("If the code contains multiple parallel tool calls, it should return all of them", async () => {
@@ -206,8 +209,8 @@ describe("runToolCode", () => {
     );
 
     expect(result).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: DOUBLE_WEB_SEARCH,
         toolState: [
           {
@@ -225,7 +228,7 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
   });
 
   it("should support sequential tool calls", async () => {
@@ -238,8 +241,8 @@ describe("runToolCode", () => {
     );
 
     expect(result).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: SEQUENTIAL_WEB_SEARCH,
         toolState: [
           {
@@ -249,7 +252,7 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
 
     const result2 = await runToolCode(
       {
@@ -257,8 +260,9 @@ describe("runToolCode", () => {
         toolState: [
           {
             type: "resolvedTool",
-            id: (result as Extract<typeof result, { type: "error" }>).error
-              .toolState[0].id,
+            id: (
+              result as Extract<typeof result, { type: "partial_evaluation" }>
+            ).partialEvaluation.toolState[0].id,
             result: [{ title: "sport news", url: "https://www.google.com" }],
           },
         ],
@@ -266,12 +270,13 @@ describe("runToolCode", () => {
       [webSearchTool]
     );
 
-    const firstId = (result as Extract<typeof result, { type: "error" }>).error
-      .toolState[0].id;
+    const firstId = (
+      result as Extract<typeof result, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[0].id;
 
     expect(result2).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: SEQUENTIAL_WEB_SEARCH,
         toolState: [
           {
@@ -289,10 +294,11 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
 
-    const secondId = (result2 as Extract<typeof result2, { type: "error" }>)
-      .error.toolState[1].id;
+    const secondId = (
+      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[1].id;
 
     const result3 = await runToolCode(
       {
@@ -319,17 +325,20 @@ describe("runToolCode", () => {
     );
 
     expect(result3).toEqual({
-      type: "success",
-      value: {
-        sportNews: [{ title: "sport news", url: "https://www.google.com" }],
-        internationalAffairesNews: [
-          {
-            title: "international affaires news",
-            url: "https://www.google.com",
-          },
-        ],
+      type: "code_result",
+      result: {
+        type: "success",
+        value: {
+          sportNews: [{ title: "sport news", url: "https://www.google.com" }],
+          internationalAffairesNews: [
+            {
+              title: "international affaires news",
+              url: "https://www.google.com",
+            },
+          ],
+        },
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
   });
 
   it("should handle sequential loop tool calls", async () => {
@@ -340,8 +349,8 @@ describe("runToolCode", () => {
     );
 
     expect(result1).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: LOOP_SEQUENTIAL,
         toolState: [
           {
@@ -351,10 +360,11 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
 
-    const id1 = (result1 as Extract<typeof result1, { type: "error" }>).error
-      .toolState[0].id;
+    const id1 = (
+      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[0].id;
 
     // Step 2: Resolve Paris, expect London
     const result2 = await runToolCode(
@@ -368,8 +378,8 @@ describe("runToolCode", () => {
     );
 
     expect(result2).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: LOOP_SEQUENTIAL,
         toolState: [
           { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
@@ -380,10 +390,11 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
 
-    const id2 = (result2 as Extract<typeof result2, { type: "error" }>).error
-      .toolState[1].id;
+    const id2 = (
+      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[1].id;
 
     // Step 3: Resolve London, expect New York
     const result3 = await runToolCode(
@@ -398,8 +409,8 @@ describe("runToolCode", () => {
     );
 
     expect(result3).toEqual({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         code: LOOP_SEQUENTIAL,
         toolState: [
           { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
@@ -414,10 +425,11 @@ describe("runToolCode", () => {
           },
         ],
       },
-    } satisfies Result<unknown, PartialEvaluation>);
+    } satisfies RunToolCodeResult);
 
-    const id3 = (result3 as Extract<typeof result3, { type: "error" }>).error
-      .toolState[2].id;
+    const id3 = (
+      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[2].id;
 
     // Step 4: Resolve New York, expect success
     const result4 = await runToolCode(
@@ -433,9 +445,12 @@ describe("runToolCode", () => {
     );
 
     expect(result4).toEqual({
-      type: "success",
-      value: ["Sunny in Paris", "Rainy in London", "Cloudy in NY"],
-    } satisfies Result<unknown, PartialEvaluation>);
+      type: "code_result",
+      result: {
+        type: "success",
+        value: ["Sunny in Paris", "Rainy in London", "Cloudy in NY"],
+      },
+    } satisfies RunToolCodeResult);
   });
 
   it("should handle chained tool calls where output passes to next input", async () => {
@@ -447,8 +462,8 @@ describe("runToolCode", () => {
     ]);
 
     expect(result1).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           {
             type: "pendingTool",
@@ -461,7 +476,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (result1 as any).error.toolState[0].id;
+    const id1 = (
+      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[0].id;
     const searchResult = [{ content: "Quantum computing is super fast..." }];
 
     // Step 2: summarize
@@ -474,8 +491,8 @@ describe("runToolCode", () => {
     );
 
     expect(result2).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           { type: "resolvedTool", id: id1 },
           {
@@ -489,7 +506,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id2 = (result2 as any).error.toolState[1].id;
+    const id2 = (
+      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[1].id;
     const summaryResult = "Quantum fast";
 
     // Step 3: translate
@@ -505,8 +524,8 @@ describe("runToolCode", () => {
     );
 
     expect(result3).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           { type: "resolvedTool", id: id1 },
           { type: "resolvedTool", id: id2 },
@@ -521,7 +540,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id3 = (result3 as any).error.toolState[2].id;
+    const id3 = (
+      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[2].id;
     const translationResult = "Quantique rapide";
 
     // Step 4: Success
@@ -538,9 +559,12 @@ describe("runToolCode", () => {
     );
 
     expect(result4).toEqual({
-      type: "success",
-      value: "Quantique rapide",
-    } satisfies Result<unknown, PartialEvaluation>);
+      type: "code_result",
+      result: {
+        type: "success",
+        value: "Quantique rapide",
+      },
+    } satisfies RunToolCodeResult);
   });
 
   it("should handle mixed parallel and sequential calls", async () => {
@@ -551,8 +575,8 @@ describe("runToolCode", () => {
     );
 
     expect(result1).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           {
             type: "pendingTool",
@@ -572,8 +596,12 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (result1 as any).error.toolState[0].id;
-    const id2 = (result1 as any).error.toolState[1].id;
+    const id1 = (
+      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[0].id;
+    const id2 = (
+      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[1].id;
     const techResult = [{ content: "New iPhone released" }];
     const financeResult = [{ content: "Stocks are up" }];
 
@@ -590,8 +618,8 @@ describe("runToolCode", () => {
     );
 
     expect(result2).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           { type: "resolvedTool", id: id1 },
           { type: "resolvedTool", id: id2 },
@@ -606,7 +634,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id3 = (result2 as any).error.toolState[2].id;
+    const id3 = (
+      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[2].id;
     const techSummary = "iPhone new";
 
     // Step 3: Second summary (finance)
@@ -623,8 +653,8 @@ describe("runToolCode", () => {
     );
 
     expect(result3).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           { type: "resolvedTool", id: id1 },
           { type: "resolvedTool", id: id2 },
@@ -640,7 +670,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id4 = (result3 as any).error.toolState[3].id;
+    const id4 = (
+      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[3].id;
     const financeSummary = "Stocks up";
 
     // Step 4: Success
@@ -658,9 +690,12 @@ describe("runToolCode", () => {
     );
 
     expect(result4).toEqual({
-      type: "success",
-      value: { techSummary, financeSummary },
-    } satisfies Result<unknown, PartialEvaluation>);
+      type: "code_result",
+      result: {
+        type: "success",
+        value: { techSummary, financeSummary },
+      },
+    } satisfies RunToolCodeResult);
   });
 
   it("should handle data post-processing and filtering before next tool", async () => {
@@ -671,8 +706,8 @@ describe("runToolCode", () => {
     );
 
     expect(result1).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           {
             type: "pendingTool",
@@ -685,7 +720,9 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (result1 as any).error.toolState[0].id;
+    const id1 = (
+      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
+    ).partialEvaluation.toolState[0].id;
     const searchResults = [
       { content: "Burger recipe", tags: ["meat"] },
       { content: "Salad recipe", tags: ["vegetarian"] },
@@ -702,8 +739,8 @@ describe("runToolCode", () => {
     );
 
     expect(result2).toMatchObject({
-      type: "error",
-      error: {
+      type: "partial_evaluation",
+      partialEvaluation: {
         toolState: [
           { type: "resolvedTool", id: id1 },
           {
@@ -725,7 +762,9 @@ describe("runToolCode", () => {
     });
 
     // Check parallel structure in toolState
-    const errorState = (result2 as any).error;
+    const errorState = (
+      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
+    ).partialEvaluation;
     expect(errorState.toolState).toHaveLength(3);
     const id2 = errorState.toolState[1].id;
     const id3 = errorState.toolState[2].id;
@@ -744,8 +783,11 @@ describe("runToolCode", () => {
     );
 
     expect(result3).toEqual({
-      type: "success",
-      value: ["Tasty salad", "Good tofu"],
-    } satisfies Result<unknown, PartialEvaluation>);
+      type: "code_result",
+      result: {
+        type: "success",
+        value: ["Tasty salad", "Good tofu"],
+      },
+    } satisfies RunToolCodeResult);
   });
 });
