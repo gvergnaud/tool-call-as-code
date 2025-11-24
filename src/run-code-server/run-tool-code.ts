@@ -198,7 +198,10 @@ main().then(
     return match(collectedOutput)
       .returnType<RunToolCodeResult>()
       .with(undefined, () => {
-        return { type: "error", error: new Error("No output collected") };
+        return {
+          type: "error",
+          error: tryJSONStringify(new Error("No output collected")),
+        };
       })
       .with({ type: "success" }, (result) => {
         return { type: "code_result", result };
@@ -218,8 +221,23 @@ main().then(
       .exhaustive();
   } catch (error) {
     console.error("Unexpected error", error);
-    return { type: "error", error };
+    return { type: "error", error: tryJSONStringify(error) };
   } finally {
     isolate.dispose();
   }
 }
+
+const tryJSONStringify = (value: unknown) => {
+  if (value instanceof Error) {
+    return JSON.stringify({
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    });
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return String(value);
+  }
+};
