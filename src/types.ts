@@ -7,6 +7,7 @@ import type {
   Tool,
 } from "@mistralai/mistralai/models/components";
 import { P } from "ts-pattern";
+import { Result } from "./utils";
 
 /**
  * Standard messages, compliant to the tool calling protocol.
@@ -81,3 +82,49 @@ export type ToolWithOutput = Tool & {
     returnSchema?: Record<string, any>;
   };
 };
+
+/**
+ * PartialEvaluation represents the state of a code execution
+ * with intercepted tool calls.
+ */
+export type PartialEvaluation = {
+  code: string;
+  toolState: ToolState[];
+};
+
+export type ToolState = PendingTool | ResolvedTool | RejectedTool;
+
+export type PendingTool = {
+  type: "pendingTool";
+  id: string;
+  function: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+};
+
+export type ResolvedTool = {
+  type: "resolvedTool";
+  id: string;
+  result: unknown;
+};
+
+export type RejectedTool = {
+  type: "rejectedTool";
+  id: string;
+  error: Error;
+};
+
+export type RunToolCodeResult =
+  | {
+      type: "code_result";
+      result: Result<unknown, unknown>;
+    }
+  | {
+      type: "partial_evaluation";
+      partialEvaluation: PartialEvaluation;
+    }
+  | {
+      type: "error";
+      error: unknown;
+    };

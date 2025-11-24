@@ -4,15 +4,65 @@ import {
   ServerAssistantMessage,
   ServerMessage,
   ToolWithOutput,
+  PartialEvaluation,
+  SystemMessage,
+  RunToolCodeResult,
 } from "../types";
-import { runToolCode } from "./run-tool-code";
 import { complete } from "./llm";
 import {
   parseClientMessages,
-  partialEvaluationToAssistantMessage,
   serverAssistantMessageToClientMessages,
+  toolStatesToAssistantMessage,
 } from "./type-conversion-helpers";
-import { getRunTypescriptToolAndSystemMessage } from "./run-typescript-tool";
+import { Tool } from "@mistralai/mistralai/models/components";
+
+// --- HTTP Client Implementations ---
+
+const CODE_SERVER_URL = "http://localhost:3001";
+
+async function getRunTypescriptToolAndSystemMessage(
+  tools: readonly ToolWithOutput[]
+): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> {
+  const response = await fetch(`${CODE_SERVER_URL}/convert-tools`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tools),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Failed to convert tools: ${response.status} ${response.statusText} - ${text}`
+    );
+  }
+
+  return (await response.json()) as {
+    runTypescriptTool: Tool;
+    systemMessage: SystemMessage;
+  };
+}
+
+async function runToolCode(
+  partialEvaluation: PartialEvaluation,
+  tools: readonly ToolWithOutput[]
+): Promise<RunToolCodeResult> {
+  const response = await fetch(`${CODE_SERVER_URL}/evaluate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partialEvaluation, tools }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Failed to evaluate code: ${response.status} ${response.statusText} - ${text}`
+    );
+  }
+
+  return (await response.json()) as RunToolCodeResult;
+}
+
+// --- Server Logic ---
 
 /**
  * There are two types of message histories:
@@ -63,31 +113,59 @@ export const server = async (
         tools
       );
       switch (result.type) {
-        case "success": {
-          const codeResultMessage = {
-            role: "code_result" as const,
-            id: parsed.id,
-            result: {
-              status: "success",
-              data: result.value,
-            },
-          } satisfies CodeResultMessage;
+        case "code_result": {
+          switch (result.result.type) {
+            case "success": {
+              const codeResultMessage = {
+                role: "code_result" as const,
+                id: parsed.id,
+                result: {
+                  status: "success",
+                  data: result.result.value,
+                },
+              } satisfies CodeResultMessage;
 
-          // in case of success, recurse
-          // so the we switch back to LLM mode
-          // and the LLM get's called to
-          // generate an assistant message.
-          return server(inputMessages, tools, [
-            ...outputMessages,
-            codeResultMessage,
-          ]);
+              // in case of success, recurse
+              // so the we switch back to LLM mode
+              // and the LLM get's called to
+              // generate an assistant message.
+              return server(inputMessages, tools, [
+                ...outputMessages,
+                codeResultMessage,
+              ]);
+            }
+            case "error": {
+              // Runtime error in the sandbox -> treat as code result error
+              const codeResultMessage = {
+                role: "code_result" as const,
+                id: parsed.id,
+                result: {
+                  status: "error",
+                  error: result.result.error,
+                },
+              } satisfies CodeResultMessage;
+
+              return server(inputMessages, tools, [
+                ...outputMessages,
+                codeResultMessage,
+              ]);
+            }
+            default: {
+              const exhaustive: never = result.result;
+              return exhaustive;
+            }
+          }
         }
-        case "error": {
-          const partialEvaluation = result.error;
-          const assistantMessage =
-            partialEvaluationToAssistantMessage(partialEvaluation);
+        case "partial_evaluation": {
+          const newToolState = result.partialEvaluation.toolState.slice(
+            parsed.partialEvaluation.toolState.length
+          );
+          const assistantMessage = toolStatesToAssistantMessage(newToolState);
 
           return [...outputMessages, assistantMessage];
+        }
+        case "error": {
+          throw new Error(`Unexpected code execution error: ${result.error}`);
         }
         default: {
           const exhaustive: never = result;

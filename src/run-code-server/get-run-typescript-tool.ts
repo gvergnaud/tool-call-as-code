@@ -1,14 +1,50 @@
-import { compile } from "json-schema-to-typescript";
-import { SystemMessage } from "../types";
-import { ToolWithOutput } from "../types";
 import { Tool } from "@mistralai/mistralai/models/components";
+import { compile, Options } from "json-schema-to-typescript";
 import { capitalize } from "remeda";
+import { SystemMessage, ToolWithOutput } from "../types";
 
-/**
- * Turns tool definition into a TypeScript type declaration
- * included in a system message, and returns it as well as
- * a `run_typescript` tool definition.
- */
+const compileOptions: Partial<Options> = {
+  bannerComment: "",
+  additionalProperties: false,
+};
+
+const toolDefinitionsToTypeScriptTypes = async (
+  tools: readonly ToolWithOutput[]
+): Promise<string> => {
+  const tsDeclarations = await Promise.all(
+    tools.map(async (tool) => {
+      const argTypeName = `${capitalize(tool.function.name)}Arg`;
+      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
+      const argsTs = await compile(
+        tool.function.parameters as any,
+        argTypeName,
+        compileOptions
+      );
+
+      const outputTs = tool.function.returnSchema
+        ? await compile(
+            tool.function.returnSchema,
+            returnTypeName,
+            compileOptions
+          )
+        : `type ${returnTypeName} = unknown;`;
+
+      const functionComment = tool.function.description
+        ? `/**\n ${tool.function.description
+            .split("\n")
+            .map((line) => ` * ${line}`)
+            .join("\n")}\n */`
+        : "";
+
+      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
+
+      return `${argsTs}\n\n${outputTs}\n\n${functionComment}\n${functionTs}`;
+    })
+  );
+
+  return tsDeclarations.join("\n\n");
+};
+
 export const getRunTypescriptToolAndSystemMessage = async (
   tools: readonly ToolWithOutput[]
 ): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> => {
@@ -29,6 +65,8 @@ export const getRunTypescriptToolAndSystemMessage = async (
     },
   };
 
+  const toolNames = tools.map((t) => `\`${t.function.name}\``).join(", ");
+
   const systemMessage: SystemMessage = {
     role: "system",
     content: `
@@ -37,6 +75,12 @@ export const getRunTypescriptToolAndSystemMessage = async (
 You have access to a single \`run_typescript\` tool that enables you to run
 TypeScript code in a sandbox environment. This sandbox has access to ES2015 - ES2022
 language features, but doesn't have access to NodeJS or Browser API features.
+
+**IMPORTANT:**
+You might not see tools like ${toolNames} in your list of available tools.
+However, you **DO HAVE ACCESS** to them as functions inside the \`run_typescript\` sandbox.
+You SHOULD use these functions to answer user requests.
+To use them, simply write a TypeScript script that calls these functions and execute it using the \`run_typescript\` tool.
 
 ### The \`main\` function
 
@@ -72,50 +116,19 @@ declare function getArticles(arg: GetArticlesArg): Promise<GetArticlesReturned>;
 
 2. And the user query is "find articles about sport news, and only include articles with the word 'basketball' in the title."
 
-3. You should call \`run_typescript\` with the following "code" parameter:
+3. You should call \`run_typescript\` with the following arguments:
 
-\`\`\`ts
-const runTypeScriptArguments = {
-  code: \`
-  async function main() {
-    const results = await getArticles({ query: "sport news" });
-    return results.filter((result) => result.title.includes("basketball"));
-  }
-  \`
+\`\`\`json
+{
+  "code": "async function main() {\\n  const results = await getArticles({ query: \\"sport news\\" });\\n  return results.filter((result) => result.title.includes(\\"basketball\\"));\\n}"
 }
 \`\`\`
 
-Rational: 
+Rationale: 
 - You use the \`getArticles\` function to get relevant articles, and then filter the result as instructed by the user query.
 - You don't need to call main because the sandbox does it for you.
 
 `.trim(),
   };
   return { runTypescriptTool, systemMessage };
-};
-
-const toolDefinitionsToTypeScriptTypes = async (
-  tools: readonly ToolWithOutput[]
-): Promise<string> => {
-  const tsDeclarations = await Promise.all(
-    tools.map(async (tool) => {
-      const argTypeName = `${capitalize(tool.function.name)}Arg`;
-      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
-      const argsTs = await compile(tool.function.parameters, argTypeName, {
-        bannerComment: "",
-      });
-
-      const outputTs = tool.function.returnSchema
-        ? await compile(tool.function.returnSchema, returnTypeName, {
-            bannerComment: "",
-          })
-        : `type ${returnTypeName} = unknown;`;
-
-      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
-
-      return `${argsTs}\n\n${outputTs}\n\n${functionTs}`;
-    })
-  );
-
-  return tsDeclarations.join("\n\n");
 };

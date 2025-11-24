@@ -1,34 +1,33 @@
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Isolate } from "isolated-vm";
-import { Result } from "../utils";
 import { isMatching, match, P } from "ts-pattern";
+import { PartialEvaluation, ToolState, RunToolCodeResult } from "../types";
+import { Result } from "../utils";
 
-const NewToolCall = {
+type NewToolCallInternal = {
+  type: "newToolCall";
+  name: string;
+  args: Record<string, unknown>;
+};
+type MismatchedToolCall = {
+  type: "mismatchedToolCall";
+  expected: string;
+  actual: string;
+  index: number;
+};
+type UnexpectedPendingToolInternal = {
+  type: "unexpectedPendingTool";
+  name: string;
+  args: Record<string, unknown>;
+};
+
+const NewToolCallPattern = {
   type: "newToolCall",
   name: P.string,
   args: P.record(P.string, P.unknown),
 };
 
-const MismatchedToolCall = {
-  type: "mismatchedToolCall",
-  expected: P.string,
-  actual: P.string,
-  index: P.number,
-};
-
-const UnexpectedPendingTool = {
-  type: "unexpectedPendingTool",
-  name: P.string,
-  args: P.record(P.string, P.unknown),
-};
-
-type NewToolCall = P.infer<typeof NewToolCall>;
-type MismatchedToolCall = P.infer<typeof MismatchedToolCall>;
-type UnexpectedPendingTool = P.infer<typeof UnexpectedPendingTool>;
-
-const isNewToolCall = isMatching(NewToolCall);
-const isMismatchedToolCall = isMatching(MismatchedToolCall);
-const isUnexpectedPendingTool = isMatching(UnexpectedPendingTool);
+const isNewToolCall = isMatching(NewToolCallPattern);
 
 type PromiseInstruction<A, B> =
   | {
@@ -40,15 +39,6 @@ type PromiseInstruction<A, B> =
       value: B;
     };
 
-/**
- * - tools are implemented as a promise that either rejects a:
- *   - newToolCall message, containing name and args
- *   - A mismatched tool call message (when the toolcall executed doesn’t match the current stack)
- * - Or returns the value from the stack
- *
- * If a tool call isn't present on the stack, we mutate the second parameter
- * and append a pending tool call to the list.
- */
 const createToolCallImplementation = (
   toolStates: readonly ToolState[],
   mutableToolStatesOutput: ToolState[]
@@ -60,20 +50,22 @@ const createToolCallImplementation = (
     toolArgs: Record<string, unknown>
   ): PromiseInstruction<
     unknown,
-    NewToolCall | MismatchedToolCall | UnexpectedPendingTool | Error
+    | NewToolCallInternal
+    | MismatchedToolCall
+    | UnexpectedPendingToolInternal
+    | Error
   > => {
     const currentItem = toolStates.at(index);
     const returned = match(currentItem)
       .returnType<
         PromiseInstruction<
           unknown,
-          NewToolCall | MismatchedToolCall | UnexpectedPendingTool | Error
+          | NewToolCallInternal
+          | MismatchedToolCall
+          | UnexpectedPendingToolInternal
+          | Error
         >
       >()
-      // should never happen. It should be
-      // either undefined, resolved, or rejected.
-      // We return an error just in case the
-      // implementation is not correct.
       .with({ type: "pendingTool" }, (item) => {
         return {
           type: "reject",
@@ -81,10 +73,9 @@ const createToolCallImplementation = (
             type: "unexpectedPendingTool",
             name: toolName,
             args: toolArgs,
-          } satisfies NewToolCall,
+          } satisfies UnexpectedPendingToolInternal,
         };
       })
-
       .with(undefined, () => {
         mutableToolStatesOutput.push({
           id: crypto.randomUUID(),
@@ -102,10 +93,9 @@ const createToolCallImplementation = (
             type: "newToolCall",
             name: toolName,
             args: toolArgs,
-          } satisfies NewToolCall,
+          } satisfies NewToolCallInternal,
         };
       })
-
       .with({ type: "resolvedTool" }, (item) => {
         mutableToolStatesOutput.push({
           id: item.id,
@@ -118,7 +108,6 @@ const createToolCallImplementation = (
           value: item.result,
         };
       })
-
       .with({ type: "rejectedTool" }, (item) => {
         mutableToolStatesOutput.push({
           id: item.id,
@@ -128,7 +117,7 @@ const createToolCallImplementation = (
         index++;
         return {
           type: "reject",
-          value: item.error,
+          value: item.error as Error,
         };
       })
       .exhaustive();
@@ -136,41 +125,10 @@ const createToolCallImplementation = (
   };
 };
 
-export type PartialEvaluation = {
-  code: string;
-  toolState: ToolState[];
-};
-
-export type ToolState = PendingTool | ResolvedTool | RejectedTool;
-
-export type PendingTool = {
-  type: "pendingTool";
-  id: string;
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-};
-
-export type ResolvedTool = {
-  type: "resolvedTool";
-  id: string;
-  result: unknown;
-};
-
-export type RejectedTool = {
-  type: "rejectedTool";
-  id: string;
-  error: Error;
-};
-
-// - The run_code function can either return
-//   - a PartialEvaluation object with { code: string, toolState: (PendingTool | ResolvedTool | RejectedTool)[] }
-//   - A result object, contain the final result of run_typescript
 export async function runToolCode(
   partialEvaluation: PartialEvaluation,
   tools: readonly Tool[]
-): Promise<Result<unknown, PartialEvaluation>> {
+): Promise<RunToolCodeResult> {
   const isolate = new Isolate({ memoryLimit: 8 });
 
   try {
@@ -178,8 +136,6 @@ export async function runToolCode(
 
     await context.global.set("global", context.global.derefInto());
 
-    // Mutable reference, used to collect tool calls
-    // the code needs to execute.
     const toolStatesOutput: ToolState[] = [];
 
     const toolCallImplementations = createToolCallImplementation(
@@ -187,11 +143,9 @@ export async function runToolCode(
       toolStatesOutput
     );
 
-    // We collect the return value or error from the
-    // main function here.
-    let collectedOutput: Result<unknown, unknown>[] = [];
+    let collectedOutput: Result<unknown, unknown> | undefined;
     const collectOutput = (output: Result<unknown, unknown>) => {
-      collectedOutput.push(output);
+      collectedOutput = output;
     };
     await context.global.set(`$collectOutput`, collectOutput);
 
@@ -203,11 +157,6 @@ export async function runToolCode(
       );
     }
 
-    // tools are added in scope here.
-    // There are some bindings to turn
-    // `PromiseInstruction` object into
-    // actual promises, because we can
-    // only pass serializable values to the isolate.
     const addedFunctions = tools
       .map((tool) =>
         `
@@ -246,31 +195,30 @@ main().then(
 
     await script.run(context);
 
-    const errors = collectedOutput.filter((output) => output.type === "error");
-    const success = collectedOutput.filter(
-      (output) => output.type === "success"
-    );
-
-    if (!errors.length) {
-      return Result.success(success[0]?.value ?? null);
-    }
-
-    const newToolCalls = errors.map((x) => x.error).filter(isNewToolCall);
-
-    if (newToolCalls.length !== errors.length) {
-      throw new Error(
-        "Unexpected error: some errors are not new tool calls:" +
-          JSON.stringify(errors, null, 2)
-      );
-    }
-
-    return Result.error({
-      code: partialEvaluation.code,
-      toolState: toolStatesOutput,
-    });
+    return match(collectedOutput)
+      .returnType<RunToolCodeResult>()
+      .with(undefined, () => {
+        return { type: "error", error: new Error("No output collected") };
+      })
+      .with({ type: "success" }, (result) => {
+        return { type: "code_result", result };
+      })
+      .with({ type: "error", error: P.when(isNewToolCall) }, (result) => {
+        return {
+          type: "partial_evaluation",
+          partialEvaluation: {
+            code: partialEvaluation.code,
+            toolState: toolStatesOutput,
+          },
+        };
+      })
+      .with({ type: "error" }, (result) => {
+        return { type: "code_result", result: Result.error(result.error) };
+      })
+      .exhaustive();
   } catch (error) {
     console.error("Unexpected error", error);
-    throw error;
+    return { type: "error", error };
   } finally {
     isolate.dispose();
   }
