@@ -36,17 +36,17 @@ type CodeResultMessage = {
 };
 ```
 
-The deliminate code evaluation in the message history. In between, we only allow `AssistantMessage`s containing tool calls, and `ToolMessage`s containing results.
+They deliminate **a code evaluation block** in the message history. In between, we only allow `AssistantMessage`s containing tool calls, and `ToolMessage`s containing results.
 
-Here is a first example showcasing parallel tool calls:
+#### Here is a first example showcasing **parallel tool calls**:
 
 ```ts
 const messageHistoryExample [
   System,
-  User("Compare news in france and in the us today"),
+  User(message: "Compare news in france and in the us today"),
 
   // The model wants to execute this code:
-  Code("code_1", `
+  Code(id: "code_1", code: `
     const [usNews, frenchNews] = await Promise.all([
       webSearch("news US today"),
       webSearch("actualités en france aujourd'hui")
@@ -58,32 +58,32 @@ const messageHistoryExample [
   // so the API remains stateless.
 
   // Each function call is then turned into a tool call object:
-  Assistant("", [
+  Assistant(message: "", tool_calls: [
     { id: "tc_1", function: { name: "webSearch", arguments: { query: "news US today" } } },
     { id: "tc_2", function: { name: "webSearch", arguments: { query: "actualités en france aujourd'hui" } } },
   ]),
-  Tool("tc_1", "[...]"),
-  Tool("tc_2", "[...]"),
+  Tool(id: "tc_1", content: "[...]"),
+  Tool(id: "tc_2", content: "[...]"),
   // This is possible here because the two webSearch run in parallel.
   // If the model had output sequential code, we would have needed
   // two round trips.
 
   // The returned value of the codeblock is exposed as a code result:
-  CodeResult("code_1", "{ usNews, frenchNews }"),
+  CodeResult(id: "code_1", content: "{ usNews, frenchNews }"),
   // It's forwarded to the model as the only tool result it sees,
   // and it ouputs an assistant message:
-  Assistant("Here are the highlights of US and French news ...")
+  Assistant(message: "Here are the highlights of US and French news ...")
 ]
 ```
 
-And another example with sequential tool calls:
+#### And another example with **sequential tool calls**:
 
 ```ts
 const messageHistoryExample [
   System,
-  User("Compare news in france and in the us today"),
+  User(message: "Compare news in france and in the us today"),
 
-  Code("code_1", `
+  Code(id: "code_1", code: `
     const usNews = await webSearch("news US today");
     const frenchNews = await webSearch("actualités en france aujourd'hui");
 
@@ -91,21 +91,21 @@ const messageHistoryExample [
   `),
 
   // First tool call roundtrip:
-  Assistant("", [
+  Assistant(message: "", tool_calls: [
     { id: "tc_1", function: { name: "webSearch", arguments: { query: "news US today" } } },
   ]),
-  Tool("tc_1", "[...]"),
+  Tool(id: "tc_1", content: "[...]"),
 
   // Second tool call roundtrip:
-  Assistant("", [
+  Assistant(message: "", tool_calls: [
     { id: "tc_2", function: { name: "webSearch", arguments: { query: "actualités en france aujourd'hui" } } },
   ]),
-  Tool("tc_2", "[...]"),
+  Tool(id: "tc_2", content: "[...]"),
   // Note that the LLM isn't called in this case, this is all deterministic.
 
   // The rest is the same as in the parallel example:
-  CodeResult("code_1", "{ usNews, frenchNews }"),
-  Assistant("Here are the highlights of US and French news ...")
+  CodeResult(id: "code_1", content: "{ usNews, frenchNews }"),
+  Assistant(message: "Here are the highlights of US and French news ...")
 ]
 ```
 
