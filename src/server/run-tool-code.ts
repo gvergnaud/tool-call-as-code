@@ -94,6 +94,7 @@ const createToolCallImplementation = (
             arguments: toolArgs,
           },
         });
+        index++;
 
         return {
           type: "reject",
