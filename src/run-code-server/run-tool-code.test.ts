@@ -3,6 +3,7 @@ import { runToolCode } from "./run-tool-code";
 import { PartialEvaluation, RunToolCodeResult } from "../types";
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Result } from "../utils";
+import { isMatching, P } from "ts-pattern";
 
 const firstID = crypto.randomUUID();
 
@@ -254,15 +255,17 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
 
+    if (!isMatching({ type: "partial_evaluation" }, result)) {
+      throw new Error("Expected result to be partial_evaluation");
+    }
+
     const result2 = await runToolCode(
       {
         code: SEQUENTIAL_WEB_SEARCH,
         toolState: [
           {
             type: "resolvedTool",
-            id: (
-              result as Extract<typeof result, { type: "partial_evaluation" }>
-            ).partialEvaluation.toolState[0].id,
+            id: result.partialEvaluation.toolState[0].id,
             result: [{ title: "sport news", url: "https://www.google.com" }],
           },
         ],
@@ -270,9 +273,7 @@ describe("runToolCode", () => {
       [webSearchTool]
     );
 
-    const firstId = (
-      result as Extract<typeof result, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[0].id;
+    const firstId = result.partialEvaluation.toolState[0].id;
 
     expect(result2).toEqual({
       type: "partial_evaluation",
@@ -296,9 +297,11 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
 
-    const secondId = (
-      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[1].id;
+    if (!isMatching({ type: "partial_evaluation" }, result2)) {
+      throw new Error("Expected result2 to be partial_evaluation");
+    }
+
+    const secondId = result2.partialEvaluation.toolState[1].id;
 
     const result3 = await runToolCode(
       {
@@ -362,9 +365,11 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
 
-    const id1 = (
-      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[0].id;
+    if (!isMatching({ type: "partial_evaluation" }, result1)) {
+      throw new Error("Expected result1 to be partial_evaluation");
+    }
+
+    const id1 = result1.partialEvaluation.toolState[0].id;
 
     // Step 2: Resolve Paris, expect London
     const result2 = await runToolCode(
@@ -392,9 +397,11 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
 
-    const id2 = (
-      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[1].id;
+    if (!isMatching({ type: "partial_evaluation" }, result2)) {
+      throw new Error("Expected result2 to be partial_evaluation");
+    }
+
+    const id2 = result2.partialEvaluation.toolState[1].id;
 
     // Step 3: Resolve London, expect New York
     const result3 = await runToolCode(
@@ -427,9 +434,11 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
 
-    const id3 = (
-      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[2].id;
+    if (!isMatching({ type: "partial_evaluation" }, result3)) {
+      throw new Error("Expected result3 to be partial_evaluation");
+    }
+
+    const id3 = result3.partialEvaluation.toolState[2].id;
 
     // Step 4: Resolve New York, expect success
     const result4 = await runToolCode(
@@ -476,9 +485,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (
-      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[0].id;
+    if (!isMatching({ type: "partial_evaluation" }, result1)) {
+      throw new Error("Expected result1 to be partial_evaluation");
+    }
+
+    const id1 = result1.partialEvaluation.toolState[0].id;
     const searchResult = [{ content: "Quantum computing is super fast..." }];
 
     // Step 2: summarize
@@ -506,9 +517,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id2 = (
-      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[1].id;
+    if (!isMatching({ type: "partial_evaluation" }, result2)) {
+      throw new Error("Expected result2 to be partial_evaluation");
+    }
+
+    const id2 = result2.partialEvaluation.toolState[1].id;
     const summaryResult = "Quantum fast";
 
     // Step 3: translate
@@ -540,9 +553,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id3 = (
-      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[2].id;
+    if (!isMatching({ type: "partial_evaluation" }, result3)) {
+      throw new Error("Expected result3 to be partial_evaluation");
+    }
+
+    const id3 = result3.partialEvaluation.toolState[2].id;
     const translationResult = "Quantique rapide";
 
     // Step 4: Success
@@ -596,12 +611,12 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (
-      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[0].id;
-    const id2 = (
-      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[1].id;
+    if (!isMatching({ type: "partial_evaluation" }, result1)) {
+      throw new Error("Expected result1 to be partial_evaluation");
+    }
+
+    const id1 = result1.partialEvaluation.toolState[0].id;
+    const id2 = result1.partialEvaluation.toolState[1].id;
     const techResult = [{ content: "New iPhone released" }];
     const financeResult = [{ content: "Stocks are up" }];
 
@@ -634,9 +649,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id3 = (
-      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[2].id;
+    if (!isMatching({ type: "partial_evaluation" }, result2)) {
+      throw new Error("Expected result2 to be partial_evaluation");
+    }
+
+    const id3 = result2.partialEvaluation.toolState[2].id;
     const techSummary = "iPhone new";
 
     // Step 3: Second summary (finance)
@@ -670,9 +687,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id4 = (
-      result3 as Extract<typeof result3, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[3].id;
+    if (!isMatching({ type: "partial_evaluation" }, result3)) {
+      throw new Error("Expected result3 to be partial_evaluation");
+    }
+
+    const id4 = result3.partialEvaluation.toolState[3].id;
     const financeSummary = "Stocks up";
 
     // Step 4: Success
@@ -720,9 +739,11 @@ describe("runToolCode", () => {
       },
     });
 
-    const id1 = (
-      result1 as Extract<typeof result1, { type: "partial_evaluation" }>
-    ).partialEvaluation.toolState[0].id;
+    if (!isMatching({ type: "partial_evaluation" }, result1)) {
+      throw new Error("Expected result1 to be partial_evaluation");
+    }
+
+    const id1 = result1.partialEvaluation.toolState[0].id;
     const searchResults = [
       { content: "Burger recipe", tags: ["meat"] },
       { content: "Salad recipe", tags: ["vegetarian"] },
@@ -761,10 +782,12 @@ describe("runToolCode", () => {
       },
     });
 
+    if (!isMatching({ type: "partial_evaluation" }, result2)) {
+      throw new Error("Expected result2 to be partial_evaluation");
+    }
+
     // Check parallel structure in toolState
-    const errorState = (
-      result2 as Extract<typeof result2, { type: "partial_evaluation" }>
-    ).partialEvaluation;
+    const errorState = result2.partialEvaluation;
     expect(errorState.toolState).toHaveLength(3);
     const id2 = errorState.toolState[1].id;
     const id3 = errorState.toolState[2].id;
