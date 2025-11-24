@@ -38,6 +38,52 @@ async function main() {
 }
 `;
 
+const LOOP_SEQUENTIAL = `
+async function main() {
+  const cities = ["Paris", "London", "New York"];
+  const weatherReports = [];
+  for (const city of cities) {
+    const report = await getWeather({ location: city });
+    weatherReports.push(report);
+  }
+  return weatherReports;
+}
+`;
+
+const CHAINED_CALLS = `
+async function main() {
+  const searchResults = await webSearch({ query: "quantum computing breakthrough" });
+  const summary = await summarize({ text: searchResults[0].content });
+  const translation = await translate({ text: summary, targetLanguage: "French" });
+  return translation;
+}
+`;
+
+const MIXED_PARALLEL_SEQUENTIAL = `
+async function main() {
+  const [techNews, financeNews] = await Promise.all([
+    webSearch({ query: "latest tech news" }),
+    webSearch({ query: "latest finance news" })
+  ]);
+  
+  const techSummary = await summarize({ text: techNews[0].content });
+  const financeSummary = await summarize({ text: financeNews[0].content });
+  
+  return { techSummary, financeSummary };
+}
+`;
+
+const POST_PROCESSING = `
+async function main() {
+  const searchResults = await webSearch({ query: "healthy recipes" });
+  const vegetarianRecipes = searchResults.filter(r => r.tags.includes("vegetarian"));
+  const summaries = await Promise.all(
+    vegetarianRecipes.map(r => summarize({ text: r.content }))
+  );
+  return summaries;
+}
+`;
+
 const webSearchTool = {
   type: "function",
   function: {
@@ -50,6 +96,49 @@ const webSearchTool = {
         },
       },
       required: ["query"],
+    },
+  },
+} satisfies Tool;
+
+const summarizeTool = {
+  type: "function",
+  function: {
+    name: "summarize",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+      },
+      required: ["text"],
+    },
+  },
+} satisfies Tool;
+
+const translateTool = {
+  type: "function",
+  function: {
+    name: "translate",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        targetLanguage: { type: "string" },
+      },
+      required: ["text", "targetLanguage"],
+    },
+  },
+} satisfies Tool;
+
+const getWeatherTool = {
+  type: "function",
+  function: {
+    name: "getWeather",
+    parameters: {
+      type: "object",
+      properties: {
+        location: { type: "string" },
+      },
+      required: ["location"],
     },
   },
 } satisfies Tool;
@@ -240,6 +329,423 @@ describe("runToolCode", () => {
           },
         ],
       },
+    } satisfies Result<unknown, PartialEvaluation>);
+  });
+
+  it("should handle sequential loop tool calls", async () => {
+    // Step 1: First call for Paris
+    const result1 = await runToolCode(
+      { code: LOOP_SEQUENTIAL, toolState: [] },
+      [getWeatherTool]
+    );
+
+    expect(result1).toEqual({
+      type: "error",
+      error: {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          {
+            type: "pendingTool",
+            id: expect.any(String),
+            function: { name: "getWeather", arguments: { location: "Paris" } },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+
+    const id1 = (result1 as Extract<typeof result1, { type: "error" }>).error
+      .toolState[0].id;
+
+    // Step 2: Resolve Paris, expect London
+    const result2 = await runToolCode(
+      {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
+        ],
+      },
+      [getWeatherTool]
+    );
+
+    expect(result2).toEqual({
+      type: "error",
+      error: {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
+          {
+            type: "pendingTool",
+            id: expect.any(String),
+            function: { name: "getWeather", arguments: { location: "London" } },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+
+    const id2 = (result2 as Extract<typeof result2, { type: "error" }>).error
+      .toolState[1].id;
+
+    // Step 3: Resolve London, expect New York
+    const result3 = await runToolCode(
+      {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
+          { type: "resolvedTool", id: id2, result: "Rainy in London" },
+        ],
+      },
+      [getWeatherTool]
+    );
+
+    expect(result3).toEqual({
+      type: "error",
+      error: {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
+          { type: "resolvedTool", id: id2, result: "Rainy in London" },
+          {
+            type: "pendingTool",
+            id: expect.any(String),
+            function: {
+              name: "getWeather",
+              arguments: { location: "New York" },
+            },
+          },
+        ],
+      },
+    } satisfies Result<unknown, PartialEvaluation>);
+
+    const id3 = (result3 as Extract<typeof result3, { type: "error" }>).error
+      .toolState[2].id;
+
+    // Step 4: Resolve New York, expect success
+    const result4 = await runToolCode(
+      {
+        code: LOOP_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: "Sunny in Paris" },
+          { type: "resolvedTool", id: id2, result: "Rainy in London" },
+          { type: "resolvedTool", id: id3, result: "Cloudy in NY" },
+        ],
+      },
+      [getWeatherTool]
+    );
+
+    expect(result4).toEqual({
+      type: "success",
+      value: ["Sunny in Paris", "Rainy in London", "Cloudy in NY"],
+    } satisfies Result<unknown, PartialEvaluation>);
+  });
+
+  it("should handle chained tool calls where output passes to next input", async () => {
+    // Step 1: webSearch
+    const result1 = await runToolCode({ code: CHAINED_CALLS, toolState: [] }, [
+      webSearchTool,
+      summarizeTool,
+      translateTool,
+    ]);
+
+    expect(result1).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          {
+            type: "pendingTool",
+            function: {
+              name: "webSearch",
+              arguments: { query: "quantum computing breakthrough" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id1 = (result1 as any).error.toolState[0].id;
+    const searchResult = [{ content: "Quantum computing is super fast..." }];
+
+    // Step 2: summarize
+    const result2 = await runToolCode(
+      {
+        code: CHAINED_CALLS,
+        toolState: [{ type: "resolvedTool", id: id1, result: searchResult }],
+      },
+      [webSearchTool, summarizeTool, translateTool]
+    );
+
+    expect(result2).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          { type: "resolvedTool", id: id1 },
+          {
+            type: "pendingTool",
+            function: {
+              name: "summarize",
+              arguments: { text: "Quantum computing is super fast..." },
+            },
+          },
+        ],
+      },
+    });
+
+    const id2 = (result2 as any).error.toolState[1].id;
+    const summaryResult = "Quantum fast";
+
+    // Step 3: translate
+    const result3 = await runToolCode(
+      {
+        code: CHAINED_CALLS,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: searchResult },
+          { type: "resolvedTool", id: id2, result: summaryResult },
+        ],
+      },
+      [webSearchTool, summarizeTool, translateTool]
+    );
+
+    expect(result3).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          { type: "resolvedTool", id: id1 },
+          { type: "resolvedTool", id: id2 },
+          {
+            type: "pendingTool",
+            function: {
+              name: "translate",
+              arguments: { text: "Quantum fast", targetLanguage: "French" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id3 = (result3 as any).error.toolState[2].id;
+    const translationResult = "Quantique rapide";
+
+    // Step 4: Success
+    const result4 = await runToolCode(
+      {
+        code: CHAINED_CALLS,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: searchResult },
+          { type: "resolvedTool", id: id2, result: summaryResult },
+          { type: "resolvedTool", id: id3, result: translationResult },
+        ],
+      },
+      [webSearchTool, summarizeTool, translateTool]
+    );
+
+    expect(result4).toEqual({
+      type: "success",
+      value: "Quantique rapide",
+    } satisfies Result<unknown, PartialEvaluation>);
+  });
+
+  it("should handle mixed parallel and sequential calls", async () => {
+    // Step 1: Parallel web searches
+    const result1 = await runToolCode(
+      { code: MIXED_PARALLEL_SEQUENTIAL, toolState: [] },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result1).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          {
+            type: "pendingTool",
+            function: {
+              name: "webSearch",
+              arguments: { query: "latest tech news" },
+            },
+          },
+          {
+            type: "pendingTool",
+            function: {
+              name: "webSearch",
+              arguments: { query: "latest finance news" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id1 = (result1 as any).error.toolState[0].id;
+    const id2 = (result1 as any).error.toolState[1].id;
+    const techResult = [{ content: "New iPhone released" }];
+    const financeResult = [{ content: "Stocks are up" }];
+
+    // Step 2: First summary (tech)
+    const result2 = await runToolCode(
+      {
+        code: MIXED_PARALLEL_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: techResult },
+          { type: "resolvedTool", id: id2, result: financeResult },
+        ],
+      },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result2).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          { type: "resolvedTool", id: id1 },
+          { type: "resolvedTool", id: id2 },
+          {
+            type: "pendingTool",
+            function: {
+              name: "summarize",
+              arguments: { text: "New iPhone released" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id3 = (result2 as any).error.toolState[2].id;
+    const techSummary = "iPhone new";
+
+    // Step 3: Second summary (finance)
+    const result3 = await runToolCode(
+      {
+        code: MIXED_PARALLEL_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: techResult },
+          { type: "resolvedTool", id: id2, result: financeResult },
+          { type: "resolvedTool", id: id3, result: techSummary },
+        ],
+      },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result3).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          { type: "resolvedTool", id: id1 },
+          { type: "resolvedTool", id: id2 },
+          { type: "resolvedTool", id: id3 },
+          {
+            type: "pendingTool",
+            function: {
+              name: "summarize",
+              arguments: { text: "Stocks are up" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id4 = (result3 as any).error.toolState[3].id;
+    const financeSummary = "Stocks up";
+
+    // Step 4: Success
+    const result4 = await runToolCode(
+      {
+        code: MIXED_PARALLEL_SEQUENTIAL,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: techResult },
+          { type: "resolvedTool", id: id2, result: financeResult },
+          { type: "resolvedTool", id: id3, result: techSummary },
+          { type: "resolvedTool", id: id4, result: financeSummary },
+        ],
+      },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result4).toEqual({
+      type: "success",
+      value: { techSummary, financeSummary },
+    } satisfies Result<unknown, PartialEvaluation>);
+  });
+
+  it("should handle data post-processing and filtering before next tool", async () => {
+    // Step 1: Web search
+    const result1 = await runToolCode(
+      { code: POST_PROCESSING, toolState: [] },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result1).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          {
+            type: "pendingTool",
+            function: {
+              name: "webSearch",
+              arguments: { query: "healthy recipes" },
+            },
+          },
+        ],
+      },
+    });
+
+    const id1 = (result1 as any).error.toolState[0].id;
+    const searchResults = [
+      { content: "Burger recipe", tags: ["meat"] },
+      { content: "Salad recipe", tags: ["vegetarian"] },
+      { content: "Tofu stir fry", tags: ["vegetarian"] },
+    ];
+
+    // Step 2: Summarize filtered results (2 parallel calls expected)
+    const result2 = await runToolCode(
+      {
+        code: POST_PROCESSING,
+        toolState: [{ type: "resolvedTool", id: id1, result: searchResults }],
+      },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result2).toMatchObject({
+      type: "error",
+      error: {
+        toolState: [
+          { type: "resolvedTool", id: id1 },
+          {
+            type: "pendingTool",
+            function: {
+              name: "summarize",
+              arguments: { text: "Salad recipe" },
+            },
+          },
+          {
+            type: "pendingTool",
+            function: {
+              name: "summarize",
+              arguments: { text: "Tofu stir fry" },
+            },
+          },
+        ],
+      },
+    });
+
+    // Check parallel structure in toolState
+    const errorState = (result2 as any).error;
+    expect(errorState.toolState).toHaveLength(3);
+    const id2 = errorState.toolState[1].id;
+    const id3 = errorState.toolState[2].id;
+
+    // Step 3: Success
+    const result3 = await runToolCode(
+      {
+        code: POST_PROCESSING,
+        toolState: [
+          { type: "resolvedTool", id: id1, result: searchResults },
+          { type: "resolvedTool", id: id2, result: "Tasty salad" },
+          { type: "resolvedTool", id: id3, result: "Good tofu" },
+        ],
+      },
+      [webSearchTool, summarizeTool]
+    );
+
+    expect(result3).toEqual({
+      type: "success",
+      value: ["Tasty salad", "Good tofu"],
     } satisfies Result<unknown, PartialEvaluation>);
   });
 });
