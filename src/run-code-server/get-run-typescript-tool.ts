@@ -1,7 +1,12 @@
 import { Tool } from "@mistralai/mistralai/models/components";
-import { compile } from "json-schema-to-typescript";
+import { compile, Options } from "json-schema-to-typescript";
 import { capitalize } from "remeda";
 import { SystemMessage, ToolWithOutput } from "../types";
+
+const compileOptions: Partial<Options> = {
+  bannerComment: "",
+  additionalProperties: false,
+};
 
 const toolDefinitionsToTypeScriptTypes = async (
   tools: readonly ToolWithOutput[]
@@ -13,15 +18,15 @@ const toolDefinitionsToTypeScriptTypes = async (
       const argsTs = await compile(
         tool.function.parameters as any,
         argTypeName,
-        {
-          bannerComment: "",
-        }
+        compileOptions
       );
 
       const outputTs = tool.function.returnSchema
-        ? await compile(tool.function.returnSchema, returnTypeName, {
-            bannerComment: "",
-          })
+        ? await compile(
+            tool.function.returnSchema,
+            returnTypeName,
+            compileOptions
+          )
         : `type ${returnTypeName} = unknown;`;
 
       const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
@@ -53,6 +58,8 @@ export const getRunTypescriptToolAndSystemMessage = async (
     },
   };
 
+  const toolNames = tools.map((t) => `\`${t.function.name}\``).join(", ");
+
   const systemMessage: SystemMessage = {
     role: "system",
     content: `
@@ -61,6 +68,12 @@ export const getRunTypescriptToolAndSystemMessage = async (
 You have access to a single \`run_typescript\` tool that enables you to run
 TypeScript code in a sandbox environment. This sandbox has access to ES2015 - ES2022
 language features, but doesn't have access to NodeJS or Browser API features.
+
+**IMPORTANT:**
+You might not see tools like ${toolNames} in your list of available tools.
+However, you **DO HAVE ACCESS** to them as functions inside the \`run_typescript\` sandbox.
+You SHOULD use these functions to answer user requests.
+To use them, simply write a TypeScript script that calls these functions and execute it using the \`run_typescript\` tool.
 
 ### The \`main\` function
 
@@ -96,20 +109,15 @@ declare function getArticles(arg: GetArticlesArg): Promise<GetArticlesReturned>;
 
 2. And the user query is "find articles about sport news, and only include articles with the word 'basketball' in the title."
 
-3. You should call \`run_typescript\` with the following "code" parameter:
+3. You should call \`run_typescript\` with the following arguments:
 
-\`\`\`ts
-const runTypeScriptArguments = {
-  code: \`
-  async function main() {
-    const results = await getArticles({ query: "sport news" });
-    return results.filter((result) => result.title.includes("basketball"));
-  }
-  \`
+\`\`\`json
+{
+  "code": "async function main() {\\n  const results = await getArticles({ query: \\"sport news\\" });\\n  return results.filter((result) => result.title.includes(\\"basketball\\"));\\n}"
 }
 \`\`\`
 
-Rational: 
+Rationale: 
 - You use the \`getArticles\` function to get relevant articles, and then filter the result as instructed by the user query.
 - You don't need to call main because the sandbox does it for you.
 
@@ -117,4 +125,3 @@ Rational:
   };
   return { runTypescriptTool, systemMessage };
 };
-
