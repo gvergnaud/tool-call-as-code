@@ -9,7 +9,7 @@ import {
   StandardMessage,
   ToolMessage,
 } from "../types";
-import { PartialEvaluation, ToolState } from "./run-tool-code";
+import { PartialEvaluation, ToolState } from "../types";
 import { match, P } from "ts-pattern";
 import { ToolCall } from "@mistralai/mistralai/models/components";
 

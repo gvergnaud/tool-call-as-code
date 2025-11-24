@@ -1,14 +1,38 @@
-import { compile } from "json-schema-to-typescript";
-import { SystemMessage } from "../types";
-import { ToolWithOutput } from "../types";
 import { Tool } from "@mistralai/mistralai/models/components";
+import { compile } from "json-schema-to-typescript";
 import { capitalize } from "remeda";
+import { SystemMessage, ToolWithOutput } from "../types";
 
-/**
- * Turns tool definition into a TypeScript type declaration
- * included in a system message, and returns it as well as
- * a `run_typescript` tool definition.
- */
+const toolDefinitionsToTypeScriptTypes = async (
+  tools: readonly ToolWithOutput[]
+): Promise<string> => {
+  const tsDeclarations = await Promise.all(
+    tools.map(async (tool) => {
+      const argTypeName = `${capitalize(tool.function.name)}Arg`;
+      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
+      const argsTs = await compile(
+        tool.function.parameters as any,
+        argTypeName,
+        {
+          bannerComment: "",
+        }
+      );
+
+      const outputTs = tool.function.returnSchema
+        ? await compile(tool.function.returnSchema, returnTypeName, {
+            bannerComment: "",
+          })
+        : `type ${returnTypeName} = unknown;`;
+
+      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
+
+      return `${argsTs}\n\n${outputTs}\n\n${functionTs}`;
+    })
+  );
+
+  return tsDeclarations.join("\n\n");
+};
+
 export const getRunTypescriptToolAndSystemMessage = async (
   tools: readonly ToolWithOutput[]
 ): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> => {
@@ -94,28 +118,3 @@ Rational:
   return { runTypescriptTool, systemMessage };
 };
 
-const toolDefinitionsToTypeScriptTypes = async (
-  tools: readonly ToolWithOutput[]
-): Promise<string> => {
-  const tsDeclarations = await Promise.all(
-    tools.map(async (tool) => {
-      const argTypeName = `${capitalize(tool.function.name)}Arg`;
-      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
-      const argsTs = await compile(tool.function.parameters, argTypeName, {
-        bannerComment: "",
-      });
-
-      const outputTs = tool.function.returnSchema
-        ? await compile(tool.function.returnSchema, returnTypeName, {
-            bannerComment: "",
-          })
-        : `type ${returnTypeName} = unknown;`;
-
-      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
-
-      return `${argsTs}\n\n${outputTs}\n\n${functionTs}`;
-    })
-  );
-
-  return tsDeclarations.join("\n\n");
-};
