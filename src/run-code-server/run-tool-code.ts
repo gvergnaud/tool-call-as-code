@@ -193,7 +193,11 @@ main().then(
     `.trim()
     );
 
-    await script.run(context);
+    try {
+      await script.run(context);
+    } catch (error) {
+      collectedOutput = { type: "error", error: tryJSONStringify(error) };
+    }
 
     return match(collectedOutput)
       .returnType<RunToolCodeResult>()
