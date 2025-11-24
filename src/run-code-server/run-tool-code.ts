@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
@@ -173,8 +174,7 @@ function ${tool.function.name}(...args) {
       )
       .join("\n\n");
 
-    const script = await isolate.compileScript(
-      `
+    const fullCode = `
 ${addedFunctions}
 
 ${partialEvaluation.code}
@@ -190,15 +190,29 @@ main().then(
   }
 );
 
-    `.trim()
-    );
+    `.trim();
 
-    await script.run(context);
+    const { outputText } = ts.transpileModule(fullCode, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+      },
+    });
+
+    const script = await isolate.compileScript(outputText);
+
+    try {
+      await script.run(context);
+    } catch (error) {
+      collectedOutput = { type: "error", error: tryJSONStringify(error) };
+    }
 
     return match(collectedOutput)
       .returnType<RunToolCodeResult>()
       .with(undefined, () => {
-        return { type: "error", error: new Error("No output collected") };
+        return {
+          type: "error",
+          error: tryJSONStringify(new Error("No output collected")),
+        };
       })
       .with({ type: "success" }, (result) => {
         return { type: "code_result", result };
@@ -218,8 +232,23 @@ main().then(
       .exhaustive();
   } catch (error) {
     console.error("Unexpected error", error);
-    return { type: "error", error };
+    return { type: "error", error: tryJSONStringify(error) };
   } finally {
     isolate.dispose();
   }
 }
+
+const tryJSONStringify = (value: unknown) => {
+  if (value instanceof Error) {
+    return JSON.stringify({
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    });
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return String(value);
+  }
+};

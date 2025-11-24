@@ -126,5 +126,5 @@ export type RunToolCodeResult =
     }
   | {
       type: "error";
-      error: unknown;
+      error: string;
     };
