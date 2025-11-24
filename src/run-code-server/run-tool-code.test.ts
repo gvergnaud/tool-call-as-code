@@ -813,4 +813,40 @@ describe("runToolCode", () => {
       },
     } satisfies RunToolCodeResult);
   });
+
+  it("should handle TypeScript code by transpiling it before execution", async () => {
+    const TYPESCRIPT_CODE = `
+    async function main() {
+      const query: string = "typescript news";
+      const results: { title: string; url: string }[] = await webSearch({ query });
+      const count: number = results.length;
+      return count;
+    }
+    `;
+
+    const result = await runToolCode(
+      {
+        code: TYPESCRIPT_CODE,
+        toolState: [
+          {
+            type: "resolvedTool",
+            id: crypto.randomUUID(),
+            result: [
+              { title: "TS release", url: "..." },
+              { title: "TS tutorial", url: "..." },
+            ],
+          },
+        ],
+      },
+      [webSearchTool]
+    );
+
+    expect(result).toEqual({
+      type: "code_result",
+      result: {
+        type: "success",
+        value: 2,
+      },
+    } satisfies RunToolCodeResult);
+  });
 });

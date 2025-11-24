@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { Tool } from "@mistralai/mistralai/models/components";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
@@ -173,8 +174,7 @@ function ${tool.function.name}(...args) {
       )
       .join("\n\n");
 
-    const script = await isolate.compileScript(
-      `
+    const fullCode = `
 ${addedFunctions}
 
 ${partialEvaluation.code}
@@ -190,8 +190,15 @@ main().then(
   }
 );
 
-    `.trim()
-    );
+    `.trim();
+
+    const { outputText } = ts.transpileModule(fullCode, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+      },
+    });
+
+    const script = await isolate.compileScript(outputText);
 
     try {
       await script.run(context);
