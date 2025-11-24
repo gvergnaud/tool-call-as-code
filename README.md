@@ -109,6 +109,12 @@ const messageHistoryExample [
 ]
 ```
 
+#### Tool calling data flow
+
+
+<img width="2664" height="2218" alt="image" src="https://github.com/user-attachments/assets/349048f8-0f28-4e99-afb2-93544666eb30" />
+
+
 ### How does it work?
 
 1. Tool calls are initially implemented as functions returning rejecting promises. When executed, we capture their arguments to create a tool call object.
