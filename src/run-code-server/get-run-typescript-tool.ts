@@ -29,9 +29,16 @@ const toolDefinitionsToTypeScriptTypes = async (
           )
         : `type ${returnTypeName} = unknown;`;
 
+      const functionComment = tool.function.description
+        ? `/**\n ${tool.function.description
+            .split("\n")
+            .map((line) => ` * ${line}`)
+            .join("\n")}\n */`
+        : "";
+
       const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
 
-      return `${argsTs}\n\n${outputTs}\n\n${functionTs}`;
+      return `${argsTs}\n\n${outputTs}\n\n${functionComment}\n${functionTs}`;
     })
   );
 
