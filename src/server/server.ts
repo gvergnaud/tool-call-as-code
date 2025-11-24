@@ -11,8 +11,8 @@ import {
 import { complete } from "./llm";
 import {
   parseClientMessages,
-  partialEvaluationToAssistantMessage,
   serverAssistantMessageToClientMessages,
+  toolStatesToAssistantMessage,
 } from "./type-conversion-helpers";
 import { Tool } from "@mistralai/mistralai/models/components";
 
@@ -157,9 +157,10 @@ export const server = async (
           }
         }
         case "partial_evaluation": {
-          const partialEvaluation = result.partialEvaluation;
-          const assistantMessage =
-            partialEvaluationToAssistantMessage(partialEvaluation);
+          const newToolState = result.partialEvaluation.toolState.slice(
+            parsed.partialEvaluation.toolState.length
+          );
+          const assistantMessage = toolStatesToAssistantMessage(newToolState);
 
           return [...outputMessages, assistantMessage];
         }

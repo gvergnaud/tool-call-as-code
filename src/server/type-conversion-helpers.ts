@@ -306,25 +306,24 @@ export const serverAssistantMessageToClientMessages = (
  * create an assistant message with tool calls from pending
  * tool states.
  */
-export const partialEvaluationToAssistantMessage = (
-  partialEvaluation: PartialEvaluation
+export const toolStatesToAssistantMessage = (
+  toolStates: ToolState[]
 ): AssistantMessage => {
   return {
     role: "assistant",
     content: "",
-    toolCalls: partialEvaluation.toolState.flatMap(
-      (toolState, index): ToolCall | [] =>
-        match(toolState)
-          .returnType<ToolCall | []>()
-          .with({ type: "pendingTool" }, (toolState) => ({
-            type: "function",
-            id: toolState.id,
-            index,
-            function: toolState.function,
-          }))
-          .with({ type: "resolvedTool" }, (toolState) => [])
-          .with({ type: "rejectedTool" }, (toolState) => [])
-          .exhaustive()
+    toolCalls: toolStates.flatMap((toolState, index): ToolCall | [] =>
+      match(toolState)
+        .returnType<ToolCall | []>()
+        .with({ type: "pendingTool" }, (toolState) => ({
+          type: "function",
+          id: toolState.id,
+          index,
+          function: toolState.function,
+        }))
+        .with({ type: "resolvedTool" }, (toolState) => [])
+        .with({ type: "rejectedTool" }, (toolState) => [])
+        .exhaustive()
     ),
   };
 };
