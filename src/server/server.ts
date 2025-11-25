@@ -170,7 +170,6 @@ async function sendToLLM(
 ): Promise<ServerAssistantMessage> {
   const { runTypescriptTool, systemMessage } =
     await getRunTypescriptToolAndSystemMessage(tools);
-
   return (await complete([systemMessage, ...messages], [runTypescriptTool]))
     .message as ServerAssistantMessage;
 }

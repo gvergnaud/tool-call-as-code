@@ -3,13 +3,32 @@ import { z } from "zod";
 import { runToolCode } from "./run-tool-code";
 import { PartialEvaluationSchema, ToolWithOutputSchema } from "./schema";
 import { toolDefinitionsToTypeScriptTypes } from "./tools-to-typescript";
+import { validateToolSchemas } from "./validation";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
+const loggerMiddleware = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+};
+
+app.use(loggerMiddleware);
+
 app.post("/convert-tools", async (req, res) => {
   try {
     const tools = z.array(ToolWithOutputSchema).parse(req.body);
+
+    const { isValid, errors } = await validateToolSchemas(tools);
+    if (!isValid) {
+      res.status(400).json({ error: "Validation error", issues: errors });
+      return;
+    }
+
     const result = await toolDefinitionsToTypeScriptTypes(tools);
     res.json(result);
   } catch (error) {

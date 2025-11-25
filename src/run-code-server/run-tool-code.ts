@@ -1,3 +1,4 @@
+import { Ajv, ErrorObject } from "ajv";
 import ts from "typescript";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
@@ -8,6 +9,7 @@ import {
   ToolState,
   ToolWithOutput,
 } from "./schema";
+import { validateParameters } from "./validation";
 
 type NewToolCallInternal = {
   type: "newToolCall";
@@ -26,6 +28,12 @@ type UnexpectedPendingToolInternal = {
   type: "unexpectedPendingTool";
   name: string;
   args: Record<string, unknown>;
+};
+
+type ValidationError = {
+  type: "jsonSchemaArgumentValidationError";
+  functionName: string;
+  argumentsValidationErrors: ErrorObject[];
 };
 
 const NewToolCallPattern = {
@@ -47,10 +55,15 @@ type PromiseInstruction<A, B> =
     };
 
 const createToolCallImplementation = (
+  tools: readonly ToolWithOutput[],
   toolStates: readonly ToolState[],
   mutableToolStatesOutput: ToolState[]
 ) => {
   let index = 0;
+
+  const toolSchemasByName = Object.fromEntries(
+    tools.map((tool) => [tool.function.name, {}])
+  );
 
   return (
     toolName: string,
@@ -60,6 +73,7 @@ const createToolCallImplementation = (
     | NewToolCallInternal
     | MismatchedToolCall
     | UnexpectedPendingToolInternal
+    | ValidationError
     | Error
   > => {
     const currentItem = toolStates.at(index);
@@ -70,6 +84,7 @@ const createToolCallImplementation = (
           | NewToolCallInternal
           | MismatchedToolCall
           | UnexpectedPendingToolInternal
+          | ValidationError
           | Error
         >
       >()
@@ -84,6 +99,37 @@ const createToolCallImplementation = (
         };
       })
       .with(undefined, () => {
+        index++;
+
+        try {
+          const { isValid, errors } = validateParameters(
+            toolSchemasByName[toolName],
+            toolArgs
+          );
+          if (!isValid) {
+            mutableToolStatesOutput.push({
+              id: crypto.randomUUID(),
+              type: "rejectedTool",
+              error: {
+                type: "jsonSchemaArgumentValidationError",
+                functionName: toolName,
+                argumentsValidationErrors: errors ?? [],
+              },
+            });
+
+            return {
+              type: "reject",
+              value: {
+                type: "jsonSchemaArgumentValidationError",
+                functionName: toolName,
+                argumentsValidationErrors: errors ?? [],
+              } satisfies ValidationError,
+            };
+          }
+        } catch (error) {
+          console.error("Error validating tool arguments", error);
+        }
+
         mutableToolStatesOutput.push({
           id: crypto.randomUUID(),
           type: "pendingTool",
@@ -92,7 +138,6 @@ const createToolCallImplementation = (
             arguments: toolArgs,
           },
         });
-        index++;
 
         return {
           type: "reject",
@@ -146,6 +191,7 @@ export async function runToolCode(
     const toolStatesOutput: ToolState[] = [];
 
     const toolCallImplementations = createToolCallImplementation(
+      tools,
       partialEvaluation.toolState,
       toolStatesOutput
     );

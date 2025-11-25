@@ -20,6 +20,7 @@
   "dependencies": {
     "@mistralai/mistralai": "^1.10.0",
     "@types/express": "^5.0.5",
+    "ajv": "^8.17.1",
     "express": "^5.1.0",
     "isolated-vm": "^6.0.2",
     "json-schema-to-typescript": "^15.0.4",
