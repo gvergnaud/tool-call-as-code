@@ -1,10 +1,6 @@
 import z from "zod";
-import {
-  AssistantMessage,
-  ClientMessage,
-  ToolMessage,
-  ToolWithOutput,
-} from "../types";
+import { AssistantMessage, ClientMessage, ToolMessage } from "../types";
+import { ToolWithOutput } from "../run-code-server/schema";
 
 export class Agent {
   constructor(
@@ -30,7 +26,7 @@ export class Agent {
       function: {
         name: toolName,
         parameters: z.toJSONSchema(tool.parameters),
-        returnSchema: z.toJSONSchema(tool.returned),
+        outputSchema: z.toJSONSchema(tool.returned),
         description: tool.description,
         strict: true,
       },

@@ -3,11 +3,8 @@ import type {
   SystemMessage as SystemMessage_,
   ToolMessage as ToolMessage_,
   UserMessage as UserMessage_,
-  ChatCompletionStreamRequest,
-  Tool,
 } from "@mistralai/mistralai/models/components";
 import { P } from "ts-pattern";
-import { Result } from "./utils";
 
 /**
  * Standard messages, compliant to the tool calling protocol.
@@ -71,60 +68,23 @@ export type CodeResultMessage = {
     | { status: "error"; error: unknown };
 };
 
-export type ClientMessage = StandardMessage | CodeMessage | CodeResultMessage;
-
-/**
- * ToolWithOutput is a tool definition with a returned schema,
- * used to generate the TypeScript type declarations for the system message.
- */
-export type ToolWithOutput = Tool & {
-  function: {
-    returnSchema?: Record<string, any>;
-  };
-};
-
-/**
- * PartialEvaluation represents the state of a code execution
- * with intercepted tool calls.
- */
-export type PartialEvaluation = {
+type ToolExecution = {
+  id: string;
+  name: string; // module name / var name
   code: string;
-  toolState: ToolState[];
 };
 
-export type ToolState = PendingTool | ResolvedTool | RejectedTool;
-
-export type PendingTool = {
-  type: "pendingTool";
+type CodeResult = {
   id: string;
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
+  result:
+    | { status: "success"; data: unknown }
+    | { status: "error"; error: unknown };
 };
 
-export type ResolvedTool = {
-  type: "resolvedTool";
-  id: string;
-  result: unknown;
+export type ClientAssistantMessage = AssistantMessage & {
+  role: "assistant";
+  code_executions?: ToolExecution[];
+  code_results?: CodeResult[];
 };
 
-export type RejectedTool = {
-  type: "rejectedTool";
-  id: string;
-  error: Error;
-};
-
-export type RunToolCodeResult =
-  | {
-      type: "code_result";
-      result: Result<unknown, unknown>;
-    }
-  | {
-      type: "partial_evaluation";
-      partialEvaluation: PartialEvaluation;
-    }
-  | {
-      type: "error";
-      error: string;
-    };
+export type ClientMessage = StandardMessage | CodeMessage | CodeResultMessage;

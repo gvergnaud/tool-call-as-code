@@ -1,56 +1,17 @@
-import { Tool } from "@mistralai/mistralai/models/components";
-import { compile, Options } from "json-schema-to-typescript";
-import { capitalize } from "remeda";
-import { SystemMessage, ToolWithOutput } from "../types";
-
-const compileOptions: Partial<Options> = {
-  bannerComment: "",
-  additionalProperties: false,
-};
-
-const toolDefinitionsToTypeScriptTypes = async (
-  tools: readonly ToolWithOutput[]
-): Promise<string> => {
-  const tsDeclarations = await Promise.all(
-    tools.map(async (tool) => {
-      const argTypeName = `${capitalize(tool.function.name)}Arg`;
-      const returnTypeName = `${capitalize(tool.function.name)}Returned`;
-      const argsTs = await compile(
-        tool.function.parameters as any,
-        argTypeName,
-        compileOptions
-      );
-
-      const outputTs = tool.function.returnSchema
-        ? await compile(
-            tool.function.returnSchema,
-            returnTypeName,
-            compileOptions
-          )
-        : `type ${returnTypeName} = unknown;`;
-
-      const functionComment = tool.function.description
-        ? `/**\n ${tool.function.description
-            .split("\n")
-            .map((line) => ` * ${line}`)
-            .join("\n")}\n */`
-        : "";
-
-      const functionTs = `declare async function ${tool.function.name}(arg: ${argTypeName}): Promise<${returnTypeName}>`;
-
-      return `${argsTs}\n\n${outputTs}\n\n${functionComment}\n${functionTs}`;
-    })
-  );
-
-  return tsDeclarations.join("\n\n");
-};
+import { ToolWithOutput } from "../run-code-server/schema";
+import { SystemMessage } from "../types";
+import { convertTools } from "./api";
 
 export const getRunTypescriptToolAndSystemMessage = async (
   tools: readonly ToolWithOutput[]
-): Promise<{ runTypescriptTool: Tool; systemMessage: SystemMessage }> => {
-  const tsDeclarations = await toolDefinitionsToTypeScriptTypes(tools);
+): Promise<{
+  runTypescriptTool: ToolWithOutput;
+  systemMessage: SystemMessage;
+}> => {
+  const toolTypes = await convertTools(tools);
+  const tsDeclarations = Object.values(toolTypes).join("\n\n");
 
-  const runTypescriptTool: Tool = {
+  const runTypescriptTool: ToolWithOutput = {
     type: "function",
     function: {
       name: "run_typescript",

@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runToolCode } from "./run-tool-code";
-import { PartialEvaluation, RunToolCodeResult } from "../types";
-import { Tool } from "@mistralai/mistralai/models/components";
-import { Result } from "../utils";
-import { isMatching, P } from "ts-pattern";
+import { RunToolCodeResult, ToolWithOutput } from "./schema";
+import { isMatching } from "ts-pattern";
 
 const firstID = crypto.randomUUID();
 
@@ -99,7 +97,7 @@ const webSearchTool = {
       required: ["query"],
     },
   },
-} satisfies Tool;
+} satisfies ToolWithOutput;
 
 const summarizeTool = {
   type: "function",
@@ -113,7 +111,7 @@ const summarizeTool = {
       required: ["text"],
     },
   },
-} satisfies Tool;
+} satisfies ToolWithOutput;
 
 const translateTool = {
   type: "function",
@@ -128,7 +126,7 @@ const translateTool = {
       required: ["text", "targetLanguage"],
     },
   },
-} satisfies Tool;
+} satisfies ToolWithOutput;
 
 const getWeatherTool = {
   type: "function",
@@ -142,7 +140,7 @@ const getWeatherTool = {
       required: ["location"],
     },
   },
-} satisfies Tool;
+} satisfies ToolWithOutput;
 
 describe("runToolCode", () => {
   it("should return tool calls when some tools are pending", async () => {

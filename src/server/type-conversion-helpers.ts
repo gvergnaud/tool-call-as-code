@@ -9,9 +9,9 @@ import {
   StandardMessage,
   ToolMessage,
 } from "../types";
-import { PartialEvaluation, ToolState } from "../types";
 import { match, P } from "ts-pattern";
 import { ToolCall } from "@mistralai/mistralai/models/components";
+import { PartialEvaluation, ToolState } from "../run-code-server/schema";
 
 export type ParseClientMessagesResult =
   | {

@@ -1,21 +1,27 @@
 import ts from "typescript";
-import { Tool } from "@mistralai/mistralai/models/components";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
-import { PartialEvaluation, ToolState, RunToolCodeResult } from "../types";
-import { Result } from "../utils";
+import {
+  PartialEvaluation,
+  Result,
+  RunToolCodeResult,
+  ToolState,
+  ToolWithOutput,
+} from "./schema";
 
 type NewToolCallInternal = {
   type: "newToolCall";
   name: string;
   args: Record<string, unknown>;
 };
+
 type MismatchedToolCall = {
   type: "mismatchedToolCall";
   expected: string;
   actual: string;
   index: number;
 };
+
 type UnexpectedPendingToolInternal = {
   type: "unexpectedPendingTool";
   name: string;
@@ -128,7 +134,7 @@ const createToolCallImplementation = (
 
 export async function runToolCode(
   partialEvaluation: PartialEvaluation,
-  tools: readonly Tool[]
+  tools: readonly ToolWithOutput[]
 ): Promise<RunToolCodeResult> {
   const isolate = new Isolate({ memoryLimit: 8 });
 
@@ -227,7 +233,10 @@ main().then(
         };
       })
       .with({ type: "error" }, (result) => {
-        return { type: "code_result", result: Result.error(result.error) };
+        return {
+          type: "code_result",
+          result: { type: "error", error: result.error },
+        };
       })
       .exhaustive();
   } catch (error) {
