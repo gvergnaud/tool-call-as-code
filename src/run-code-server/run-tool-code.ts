@@ -1,4 +1,4 @@
-import { Ajv, ErrorObject } from "ajv";
+import { ErrorObject } from "ajv";
 import ts from "typescript";
 import { Isolate } from "isolated-vm";
 import { isMatching, match, P } from "ts-pattern";
@@ -62,7 +62,7 @@ const createToolCallImplementation = (
   let index = 0;
 
   const toolSchemasByName = Object.fromEntries(
-    tools.map((tool) => [tool.function.name, {}])
+    tools.map((tool) => [tool.function.name, tool.function.parameters])
   );
 
   return (

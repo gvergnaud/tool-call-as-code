@@ -83,6 +83,12 @@ async function main() {
 }
 `;
 
+const INVALID_TOOL_ARGS = `
+async function main() {
+  return await webSearch({});
+}
+`;
+
 const webSearchTool = {
   type: "function",
   function: {
@@ -846,5 +852,32 @@ describe("runToolCode", () => {
         value: 2,
       },
     } satisfies RunToolCodeResult);
+  });
+
+  it("should surface validation errors when tool arguments are invalid", async () => {
+    const result = await runToolCode(
+      {
+        code: INVALID_TOOL_ARGS,
+        toolState: [],
+      },
+      [webSearchTool]
+    );
+
+    expect(result).toMatchObject({
+      type: "code_result",
+      result: {
+        type: "error",
+        error: {
+          type: "jsonSchemaArgumentValidationError",
+          functionName: "webSearch",
+          argumentsValidationErrors: expect.arrayContaining([
+            expect.objectContaining({
+              keyword: "required",
+              params: expect.objectContaining({ missingProperty: "query" }),
+            }),
+          ]),
+        },
+      },
+    });
   });
 });
