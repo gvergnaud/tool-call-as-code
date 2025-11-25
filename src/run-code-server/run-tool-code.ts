@@ -244,15 +244,13 @@ main().then(
 
     `.trim();
 
-    const { outputText } = ts.transpileModule(fullCode, {
-      compilerOptions: {
-        target: ts.ScriptTarget.ES2022,
-      },
-    });
-
-    const script = await isolate.compileScript(outputText);
-
     try {
+      const { outputText } = ts.transpileModule(fullCode, {
+        compilerOptions: {
+          target: ts.ScriptTarget.ES2022,
+        },
+      });
+      const script = await isolate.compileScript(outputText);
       await script.run(context);
     } catch (error) {
       collectedOutput = { type: "error", error: tryJSONStringify(error) };
