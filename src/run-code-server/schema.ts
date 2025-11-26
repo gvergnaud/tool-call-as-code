@@ -5,7 +5,7 @@ export const FunctionSchema = z.object({
   description: z.string().optional(),
   parameters: z.record(z.string(), z.unknown()),
   strict: z.boolean().optional(),
-  outputSchema: z.record(z.string(), z.unknown()).optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type Function = z.infer<typeof FunctionSchema>;

@@ -18,25 +18,17 @@ The server runs the code but forwards each tool call to the remote client, so cl
 
 ## High-level design
 
-We introduce two new types to the completion API: `CodeMessage` and `CodeResultMessage`.
+We introduce a new ToolCall type to the completion API: `ToolCallCode`.
 
 ```ts
-type CodeMessage = {
-  role: "code";
+type ToolCallCode = {
+  type: "code";
   id: string;
   code: string;
 };
-
-type CodeResultMessage = {
-  role: "code_result";
-  id: string;
-  result:
-    | { status: "success"; data: unknown }
-    | { status: "error"; error: unknown };
-};
 ```
 
-They deliminate **a code evaluation block** in the message history. In between, we only allow `AssistantMessage`s containing tool calls, and `ToolMessage`s containing results.
+A server message containing a code tool call and its result will deliminate **a code evaluation block** in the message history. In between, we only allow `AssistantMessage`s containing non-code tool calls, and `ToolMessage`s containing their results.
 
 #### Here is a first example showcasing **parallel tool calls**:
 
@@ -45,22 +37,21 @@ const messageHistoryExample [
   System,
   User(message: "Compare news in france and in the us today"),
 
-  // The model wants to execute this code:
-  Code(id: "code_1", code: `
-    const [usNews, frenchNews] = await Promise.all([
-      webSearch("news US today"),
-      webSearch("actualités en france aujourd'hui")
-    ]);
-
-    return { usNews, frenchNews };
-  `),
-  // It runs server side, but the code block is exposed
-  // so the API remains stateless.
-
-  // Each function call is then turned into a tool call object:
   Assistant(message: "", tool_calls: [
-    { id: "tc_1", function: { name: "webSearch", arguments: { query: "news US today" } } },
-    { id: "tc_2", function: { name: "webSearch", arguments: { query: "actualités en france aujourd'hui" } } },
+    // The model wants to execute this code:
+    // It runs server side, but the code block is exposed
+    // so the API remains stateless.
+    { id: "code_1", type: "code", code: `
+      const [usNews, frenchNews] = await Promise.all([
+        webSearch("news US today"),
+        webSearch("actualités en france aujourd'hui")
+      ]);
+
+      return { usNews, frenchNews };
+    ` },
+    // Each function call is then turned into a tool call object:
+    { id: "tc_1", type: "function", function: { name: "webSearch", arguments: { query: "news US today" } } },
+    { id: "tc_2", type: "function", function: { name: "webSearch", arguments: { query: "actualités en france aujourd'hui" } } },
   ]),
   Tool(id: "tc_1", content: "[...]"),
   Tool(id: "tc_2", content: "[...]"),
@@ -69,7 +60,7 @@ const messageHistoryExample [
   // two round trips.
 
   // The returned value of the codeblock is exposed as a code result:
-  CodeResult(id: "code_1", content: "{ usNews, frenchNews }"),
+  Too(id: "code_1", content: "{ usNews, frenchNews }"),
   // It's forwarded to the model as the only tool result it sees,
   // and it ouputs an assistant message:
   Assistant(message: "Here are the highlights of US and French news ...")
@@ -83,15 +74,14 @@ const messageHistoryExample [
   System,
   User(message: "Compare news in france and in the us today"),
 
-  Code(id: "code_1", code: `
-    const usNews = await webSearch("news US today");
-    const frenchNews = await webSearch("actualités en france aujourd'hui");
-
-    return { usNews, frenchNews };
-  `),
-
-  // First tool call roundtrip:
   Assistant(message: "", tool_calls: [
+    { id: "code_1", type: "code", code: `
+      const usNews = await webSearch("news US today");
+      const frenchNews = await webSearch("actualités en france aujourd'hui");
+
+      return { usNews, frenchNews };
+    ` },
+    // First tool call roundtrip:
     { id: "tc_1", function: { name: "webSearch", arguments: { query: "news US today" } } },
   ]),
   Tool(id: "tc_1", content: "[...]"),
@@ -104,16 +94,14 @@ const messageHistoryExample [
   // Note that the LLM isn't called in this case, this is all deterministic.
 
   // The rest is the same as in the parallel example:
-  CodeResult(id: "code_1", content: "{ usNews, frenchNews }"),
+  Tool(id: "code_1", content: "{ usNews, frenchNews }"),
   Assistant(message: "Here are the highlights of US and French news ...")
 ]
 ```
 
 #### Tool calling data flow
 
-
 <img width="2664" height="2218" alt="image" src="https://github.com/user-attachments/assets/34b54646-f790-4d63-b870-8592f4ac96bd" />
-
 
 ### How does it work?
 
@@ -216,12 +204,17 @@ This POC shows that code-mode style tool orchestration can keep the server state
   [
     {
       "role": "user",
-      "content": "Compare news in france and in the us today"
+      "content": "Analyze Apple's (AAPL) stock performance based on recent news."
     },
     {
-      "role": "code",
-      "code": "async function main() {\n  const resultsFrance = await webSearch({ query: \"news in France today\" });\n  const resultsUs = await webSearch({ query: \"news in US today\" });\n\n  return {\n    france: resultsFrance,\n    us: resultsUs\n  };\n}",
-      "id": "UB4cbzkvQ"
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "type": "code",
+          "id": "I1hOvzzEl",
+          "code": "async function main() {\n  const stockPrice = await getStockPrice({ symbol: \"AAPL\" });\n  const companyNews = await getCompanyNews({ symbol: \"AAPL\" });\n\n  const positiveNews = companyNews.filter((news) => news.sentiment === \"positive\");\n  const negativeNews = companyNews.filter((news) => news.sentiment === \"negative\");\n\n  return {\n    stockPrice,\n    positiveNewsCount: positiveNews.length,\n    negativeNewsCount: negativeNews.length,\n    positiveNews,\n    negativeNews\n  };\n}"
+        }
+      ]
     },
     {
       "role": "assistant",
@@ -229,12 +222,12 @@ This POC shows that code-mode style tool orchestration can keep the server state
       "toolCalls": [
         {
           "type": "function",
-          "id": "3b3ca3ca-9d4a-43a1-8e63-e0785e421125",
+          "id": "330472e1-288e-49e4-9bd6-3164583855fa",
           "index": 0,
           "function": {
-            "name": "webSearch",
+            "name": "getStockPrice",
             "arguments": {
-              "query": "news in France today"
+              "symbol": "AAPL"
             }
           }
         }
@@ -242,8 +235,8 @@ This POC shows that code-mode style tool orchestration can keep the server state
     },
     {
       "role": "tool",
-      "content": "[{\"title\":\"Gouvernement annonce un plan de relance pour les énergies renouvelables\",\"description\":\"Le Premier ministre a dévoilé ce matin un plan de 10 milliards d'euros pour accélérer la transition énergétique, avec un focus sur l'éolien et le solaire. Les objectifs visent une réduction de 50 % des émissions de CO₂ d'ici 2030.\"},{\"title\":\"Ligue 1 : le PSG domine l'OM dans un Classique tendu\",\"description\":\"Le Paris Saint-Germain s'impose 3-2 face à l'Olympique de Marseille lors d'un match riche en rebondissements. Mbappé marque un doublé et confirme sa forme éclatante à quelques semaines de la Coupe du Monde des Clubs.\"},{\"title\":\"Grèves dans les transports : la SNCF et la RATP appellent au dialogue\",\"description\":\"Une nouvelle journée de grève perturbe les transports en Île-de-France ce lundi. Les syndicats réclament des hausses de salaire et de meilleures conditions de travail, tandis que le gouvernement propose une médiation.\"}]",
-      "toolCallId": "3b3ca3ca-9d4a-43a1-8e63-e0785e421125"
+      "content": "{\"symbol\":\"AAPL\",\"price\":150,\"currency\":\"USD\"}",
+      "toolCallId": "330472e1-288e-49e4-9bd6-3164583855fa"
     },
     {
       "role": "assistant",
@@ -251,12 +244,12 @@ This POC shows that code-mode style tool orchestration can keep the server state
       "toolCalls": [
         {
           "type": "function",
-          "id": "0634fade-b8ce-4740-8aad-a624d5b7634a",
-          "index": 1,
+          "id": "d48b47fd-ec0d-474f-862f-d0ba97d93b8e",
+          "index": 0,
           "function": {
-            "name": "webSearch",
+            "name": "getCompanyNews",
             "arguments": {
-              "query": "news in US today"
+              "symbol": "AAPL"
             }
           }
         }
@@ -264,49 +257,18 @@ This POC shows that code-mode style tool orchestration can keep the server state
     },
     {
       "role": "tool",
-      "content": "[{\"title\":\"Federal Reserve hints at interest rate cut amid economic slowdown\",\"description\":\"The Fed signaled a potential rate cut in December as inflation cools and unemployment rises. Analysts warn of a possible recession if consumer spending continues to decline.\"},{\"title\":\"NFL: Chiefs secure playoff spot with thrilling overtime win\",\"description\":\"Patrick Mahomes leads the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce.\"},{\"title\":\"California wildfires force thousands to evacuate\",\"description\":\"Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters battle extreme winds and dry conditions, with containment efforts expected to take weeks.\"}]",
-      "toolCallId": "83258ebb-f59b-4f90-a419-6c101f95ced8"
+      "content": "[{\"title\":\"AAPL releases new product\",\"sentiment\":\"positive\"},{\"title\":\"Analyst upgrades AAPL\",\"sentiment\":\"positive\"}]",
+      "toolCallId": "d48b47fd-ec0d-474f-862f-d0ba97d93b8e"
     },
     {
-      "role": "code_result",
-      "id": "I43ZeAkkl",
-      "result": {
-        "status": "success",
-        "data": {
-          "frenchNews": [
-            {
-              "title": "Gouvernement annonce un plan de relance pour les énergies renouvelables",
-              "description": "Le Premier ministre a dévoilé ce matin un plan de 10 milliards d'euros pour accélérer la transition énergétique, avec un focus sur l'éolien et le solaire. Les objectifs visent une réduction de 50 % des émissions de CO₂ d'ici 2030."
-            },
-            {
-              "title": "Ligue 1 : le PSG domine l'OM dans un Classique tendu",
-              "description": "Le Paris Saint-Germain s'impose 3-2 face à l'Olympique de Marseille lors d'un match riche en rebondissements. Mbappé marque un doublé et confirme sa forme éclatante à quelques semaines de la Coupe du Monde des Clubs."
-            },
-            {
-              "title": "Grèves dans les transports : la SNCF et la RATP appellent au dialogue",
-              "description": "Une nouvelle journée de grève perturbe les transports en Île-de-France ce lundi. Les syndicats réclament des hausses de salaire et de meilleures conditions de travail, tandis que le gouvernement propose une médiation."
-            }
-          ],
-          "usNews": [
-            {
-              "title": "Federal Reserve hints at interest rate cut amid economic slowdown",
-              "description": "The Fed signaled a potential rate cut in December as inflation cools and unemployment rises. Analysts warn of a possible recession if consumer spending continues to decline."
-            },
-            {
-              "title": "NFL: Chiefs secure playoff spot with thrilling overtime win",
-              "description": "Patrick Mahomes leads the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce."
-            },
-            {
-              "title": "California wildfires force thousands to evacuate",
-              "description": "Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters battle extreme winds and dry conditions, with containment efforts expected to take weeks."
-            }
-          ]
-        }
-      }
+      "role": "tool",
+      "toolCallId": "I1hOvzzEl",
+      "content": "{\"status\":\"success\",\"data\":{\"stockPrice\":{\"symbol\":\"AAPL\",\"price\":150,\"currency\":\"USD\"},\"positiveNewsCount\":2,\"negativeNewsCount\":0,\"positiveNews\":[{\"title\":\"AAPL releases new product\",\"sentiment\":\"positive\"},{\"title\":\"Analyst upgrades AAPL\",\"sentiment\":\"positive\"}],\"negativeNews\":[]}}"
     },
     {
       "role": "assistant",
-      "content": "Here is a comparison of the news in France and the US today:\n\n### France\n\n1. **Gouvernement annonce un plan de relance pour les énergies renouvelables**\n   - The French Prime Minister unveiled a 10 billion euro plan to accelerate the energy transition, focusing on wind and solar power. The goal is to reduce CO₂ emissions by 50% by 2030.\n\n2. **Ligue 1 : le PSG domine l'OM dans un Classique tendu**\n   - Paris Saint-Germain defeated Olympique de Marseille 3-2 in an intense match. Kylian Mbappé scored twice and is in excellent form ahead of the Club World Cup.\n\n3. **Grèves dans les transports : la SNCF et la RATP appellent au dialogue**\n   - A new strike day is disrupting transport in the Île-de-France region. Unions are demanding salary increases and better working conditions, while the government proposes mediation.\n\n### US\n\n1. **Federal Reserve hints at interest rate cut amid economic slowdown**\n   - The Federal Reserve signaled a potential interest rate cut in December due to cooling inflation and rising unemployment. Analysts warn of a possible recession if consumer spending continues to decline.\n\n2. **NFL: Chiefs secure playoff spot with thrilling overtime win**\n   - Patrick Mahomes led the Kansas City Chiefs to a 27-24 victory over the Ravens, securing their fifth consecutive playoff berth. The game-winning drive included a 45-yard pass to Travis Kelce.\n\n3. **California wildfires force thousands to evacuate**\n   - Dozens of homes have been destroyed as wildfires rage across Northern California. Firefighters are battling extreme winds and dry conditions, with containment efforts expected to take weeks."
+      "content": "Based on the recent news analysis for Apple (AAPL), the stock price is currently at $150.00 USD. There have been 2 positive news articles and no negative news articles. The positive news includes:\n\n- \"AAPL releases new product\"\n- \"Analyst upgrades AAPL\"\n\nThis positive sentiment in the news may indicate a favorable outlook for Apple's stock performance. However, it's important to consider other factors and conduct further analysis before making any investment decisions.",
+      "toolCalls": []
     }
   ]
   ```

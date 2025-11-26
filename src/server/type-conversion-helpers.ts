@@ -1,12 +1,13 @@
 import { findLastIndex, indexBy } from "remeda";
 import {
   AssistantMessage,
+  ClientAssistantMessage,
   ClientMessage,
-  CodeMessage,
   RunTypeScriptToolCall,
   ServerAssistantMessage,
   ServerMessage,
   StandardMessage,
+  ToolCallCode,
   ToolMessage,
 } from "../types";
 import { match, P } from "ts-pattern";
@@ -44,13 +45,32 @@ export type ParseClientMessagesResult =
 export function parseClientMessages(
   messages: ClientMessage[]
 ): ParseClientMessagesResult {
-  const lastCodeIndex = findLastIndex(messages, (x) => x.role === "code");
-  const lastCodeResultIndex = findLastIndex(
+  const lastCodeIndex = findLastIndex(
     messages,
-    (x) => x.role === "code_result"
+    (x) =>
+      x.role === "assistant" &&
+      (x.toolCalls ?? [])?.some((toolCall) => toolCall.type === "code")
   );
+  const lastToolCallCode =
+    lastCodeIndex !== -1
+      ? (
+          messages[lastCodeIndex] as ClientAssistantMessage
+        )?.toolCalls?.findLast(
+          (toolCall): toolCall is ToolCallCode => toolCall.type === "code"
+        )
+      : undefined;
 
-  if (lastCodeIndex === -1 && lastCodeResultIndex === -1) {
+  const lastCodeResultIndex = lastToolCallCode
+    ? findLastIndex(
+        messages,
+        (x) => x.role === "tool" && x.toolCallId === lastToolCallCode?.id
+      )
+    : -1;
+
+  if (
+    (lastCodeIndex === -1 && lastCodeResultIndex === -1) ||
+    !lastToolCallCode
+  ) {
     return {
       mode: "llm",
       messages: clientToServerMessages(messages),
@@ -63,7 +83,6 @@ export function parseClientMessages(
   const isCodeMode = lastCodeIndex > lastCodeResultIndex;
 
   if (isCodeMode) {
-    const codeMessage = messages[lastCodeIndex] as CodeMessage;
     const currentCodeEvaluationSlice = messages.slice(lastCodeIndex + 1);
 
     if (
@@ -79,13 +98,13 @@ export function parseClientMessages(
     }
 
     const partialEvaluation: PartialEvaluation = {
-      code: codeMessage.code,
+      code: lastToolCallCode.code,
       toolState: messagesToToolState(currentCodeEvaluationSlice),
     };
     return {
       mode: "code",
-      code: codeMessage.code,
-      id: codeMessage.id,
+      code: lastToolCallCode.code,
+      id: lastToolCallCode.id,
       partialEvaluation,
     };
   }
@@ -113,24 +132,44 @@ const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
             match(message)
               .returnType<Acc>()
               // transition to code context
-              .with({ role: "code" }, (message) => ({
-                ctx: { type: "code", id: message.id },
-                messages: messages.concat([
-                  {
-                    role: "assistant",
-                    content: "",
-                    toolCalls: [
+              .with(
+                {
+                  role: "assistant",
+                  toolCalls: P.when(
+                    (toolCalls): toolCalls is NonNullable<typeof toolCalls> =>
+                      !!toolCalls?.some(
+                        (toolCall): toolCall is ToolCallCode =>
+                          toolCall.type === "code"
+                      )
+                  ),
+                },
+                (message) => {
+                  const toolCallCode = message.toolCalls.findLast(
+                    (toolCall): toolCall is ToolCallCode =>
+                      toolCall.type === "code"
+                  )!;
+                  return {
+                    ctx: { type: "code", id: toolCallCode.id },
+                    messages: messages.concat([
                       {
-                        id: message.id,
-                        function: {
-                          name: "run_typescript",
-                          arguments: JSON.stringify({ code: message.code }),
-                        },
+                        role: "assistant",
+                        content: "",
+                        toolCalls: [
+                          {
+                            id: toolCallCode.id,
+                            function: {
+                              name: "run_typescript",
+                              arguments: JSON.stringify({
+                                code: toolCallCode.code,
+                              }),
+                            },
+                          },
+                        ],
                       },
-                    ],
-                  },
-                ]),
-              }))
+                    ]),
+                  };
+                }
+              )
               .with({ role: P.union("system", "user") }, (message) => ({
                 ctx: { type: "normal" },
                 messages: messages.concat([message]),
@@ -148,12 +187,6 @@ const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
                   messages: messages.concat([message]),
                 })
               )
-              // error cases: code_result before a code message
-              .with({ role: "code_result" }, () => {
-                throw new Error(
-                  "Unexected code_result message without a code message"
-                );
-              })
               // error case: a tool result outside of code messages.
               .with({ role: "tool" }, () => {
                 throw new Error(
@@ -174,32 +207,22 @@ const clientToServerMessages = (messages: ClientMessage[]): ServerMessage[] => {
             match(message)
               .returnType<Acc>()
               // Transition back to normal
-              .with({ role: "code_result", id: ctx.id }, ({ result }) => {
+              .with({ role: "tool", toolCallId: ctx.id }, ({ content }) => {
                 return {
                   ctx: { type: "normal" },
                   messages: messages.concat([
                     {
                       role: "tool",
                       toolCallId: ctx.id,
-                      content: JSON.stringify(result),
+                      content,
                     },
                   ]),
                 };
-              })
-              .with({ role: "code_result" }, ({ id }) => {
-                throw new Error(
-                  `Wrong code result id. Expected '${ctx.id}' and received '${id}'.`
-                );
               })
               .with({ role: P.union("assistant", "tool") }, () => ({
                 ctx,
                 messages,
               }))
-              .with({ role: "code" }, () => {
-                throw new Error(
-                  "Unexpected 'code' message following an unclosed 'code' message."
-                );
-              })
               .with({ role: P.union("system", "user") }, ({ role }) => {
                 throw new Error(
                   `Unexpected '${role}' message in a 'code' context.`
@@ -294,12 +317,17 @@ export const serverAssistantMessageToClientMessages = (
   return toolCall
     ? [
         {
-          role: "code",
-          code: JSON.parse(toolCall.function.arguments).code,
-          id: toolCall.id,
+          role: "assistant",
+          toolCalls: [
+            {
+              type: "code",
+              id: toolCall.id,
+              code: JSON.parse(toolCall.function.arguments).code,
+            },
+          ],
         },
       ]
-    : [{ role: "assistant", content: message.content }];
+    : [{ role: "assistant", content: message.content, toolCalls: [] }];
 };
 
 /**
@@ -308,7 +336,7 @@ export const serverAssistantMessageToClientMessages = (
  */
 export const toolStatesToAssistantMessage = (
   toolStates: ToolState[]
-): AssistantMessage => {
+): ClientAssistantMessage => {
   return {
     role: "assistant",
     content: "",

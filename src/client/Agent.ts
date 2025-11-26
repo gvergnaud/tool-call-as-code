@@ -26,7 +26,7 @@ export class Agent {
       function: {
         name: toolName,
         parameters: z.toJSONSchema(tool.parameters),
-        outputSchema: z.toJSONSchema(tool.returned),
+        output: z.toJSONSchema(tool.returned),
         description: tool.description,
         strict: true,
       },
@@ -51,7 +51,7 @@ export class Agent {
 
       const assistantMessage = newMessages.at(-1)! as AssistantMessage;
 
-      if (!assistantMessage.toolCalls) {
+      if (!assistantMessage.toolCalls?.length) {
         return messages;
       }
 

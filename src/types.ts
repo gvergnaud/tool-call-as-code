@@ -1,6 +1,7 @@
 import type {
   AssistantMessage as AssistantMessage_,
   SystemMessage as SystemMessage_,
+  ToolCall,
   ToolMessage as ToolMessage_,
   UserMessage as UserMessage_,
 } from "@mistralai/mistralai/models/components";
@@ -54,37 +55,22 @@ export type ServerMessage =
  * in addition to standard messages.
  */
 
-export type CodeMessage = {
-  role: "code";
+type JSONSchema = Record<string, any>;
+
+export type ClientAssistantMessage = Omit<AssistantMessage, "toolCalls"> & {
+  // new
+  toolCalls?: (ToolCall | ToolCallCode)[] | null;
+};
+
+// new
+export type ToolCallCode = {
+  type: "code";
   id: string;
   code: string;
 };
 
-export type CodeResultMessage = {
-  role: "code_result";
-  id: string;
-  result:
-    | { status: "success"; data: unknown }
-    | { status: "error"; error: unknown };
-};
-
-type ToolExecution = {
-  id: string;
-  name: string; // module name / var name
-  code: string;
-};
-
-type CodeResult = {
-  id: string;
-  result:
-    | { status: "success"; data: unknown }
-    | { status: "error"; error: unknown };
-};
-
-export type ClientAssistantMessage = AssistantMessage & {
-  role: "assistant";
-  code_executions?: ToolExecution[];
-  code_results?: CodeResult[];
-};
-
-export type ClientMessage = StandardMessage | CodeMessage | CodeResultMessage;
+export type ClientMessage =
+  | ClientAssistantMessage
+  | ToolMessage
+  | UserMessage
+  | SystemMessage;

@@ -20,12 +20,8 @@ export const toolDefinitionsToTypeScriptTypes = async (
         const returnTypeName = `${capitalize(tool.function.name)}Returned`;
         const [argsTs, outputTs] = await Promise.all([
           compile(tool.function.parameters as any, argTypeName, compileOptions),
-          tool.function.outputSchema
-            ? compile(
-                tool.function.outputSchema,
-                returnTypeName,
-                compileOptions
-              )
+          tool.function.output
+            ? compile(tool.function.output, returnTypeName, compileOptions)
             : `type ${returnTypeName} = unknown;`,
         ]);
 

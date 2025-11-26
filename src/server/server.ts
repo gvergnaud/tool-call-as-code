@@ -1,8 +1,8 @@
 import {
   ClientMessage,
-  CodeResultMessage,
   ServerAssistantMessage,
   ServerMessage,
+  ToolMessage,
 } from "../types";
 import { runToolCode } from "./api";
 import { getRunTypescriptToolAndSystemMessage } from "./get-run-typescript-tool";
@@ -69,13 +69,13 @@ export const server = async (
           switch (result.result.type) {
             case "success": {
               const codeResultMessage = {
-                role: "code_result" as const,
-                id: parsed.id,
-                result: {
+                role: "tool" as const,
+                toolCallId: parsed.id,
+                content: JSON.stringify({
                   status: "success",
                   data: result.result.value,
-                },
-              } satisfies CodeResultMessage;
+                }),
+              } satisfies ToolMessage;
 
               // in case of success, recurse
               // so the we switch back to LLM mode
@@ -89,13 +89,13 @@ export const server = async (
             case "error": {
               // Runtime error in the sandbox -> treat as code result error
               const codeResultMessage = {
-                role: "code_result" as const,
-                id: parsed.id,
-                result: {
+                role: "tool" as const,
+                toolCallId: parsed.id,
+                content: JSON.stringify({
                   status: "error",
                   error: result.result.error,
-                },
-              } satisfies CodeResultMessage;
+                }),
+              } satisfies ToolMessage;
 
               return server(inputMessages, tools, [
                 ...outputMessages,
